@@ -1,0 +1,26 @@
+
+# Pequeña guía de instalación de tensorflow y keras en Ubuntu 24.04
+# En versiones de Ubuntu anteriores podíamos instalar tensorflow desde Thonny, en 24.04 por defecto
+# los paquetes están gestionados externamente a Thonny y debemos instalar en un entorno virtual
+# Con esto, Thonny no encuentra tensorflow y se ha de ejecutar en línea de comandos
+
+# Instalar CUDA y CUDNN (solo una vez)
+sudo apt install nvidia-cuda-toolkit
+sudo apt install nvidia-cudnn
+
+# Crear entorno virtual (solo una vez)
+python3 -m venv --system-site-packages ~/tensorflow
+
+# Activar el entorno virtual (cada vez que queramos usar tensorflow)
+source ~/tensorflow/bin/activate
+
+# Instalar tensorflow en el entorno virtual (solo una vez)
+pip3 install --upgrade tensorflow==2.16.1
+
+# Exportar esta variable para que encuentre libdevice (cada vez que queramos usar tensorflow)
+export XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/lib/cuda
+
+# Ejecutar nuestra red neuronal desde línea de comandos
+python3 /path/to/file.py
+
+
