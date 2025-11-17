@@ -32,24 +32,23 @@ class MLPConfig:
     batch_size: int = 32          #tamaño de batch
 
 
-def cargar_y_preprocesar_cifar10_mlp():
+def cargar_datos():
     (X_train, y_train), (X_test, y_test) = keras.datasets.cifar10.load_data()
 
-    # shape es (50000, 32, 32, 3) -> (50000, 3072), normalizando píxeles a [0, 1]
+    #shape es (50000, 32, 32, 3) -> (50000, 3072), normalizando píxeles a [0, 1]
     X_train = X_train.reshape((X_train.shape[0], -1)).astype("float32") / 255.0
     X_test  = X_test.reshape((X_test.shape[0], -1)).astype("float32") / 255.0
 
     num_clases = 10
-    # One-hot encoding: cada etiqueta pasa a vector de 10 posiciones
+    #cada etiqueta pasa a vector de 10 posiciones (one-hot encoding)
     y_train_cat = to_categorical(y_train, num_clases)
     y_test_cat  = to_categorical(y_test, num_clases)
 
     return X_train, y_train_cat, X_test, y_test_cat
 
 
-
 def compilar_mlp(config: MLPConfig, input_dim: int, num_clases: int = 10):
-    model = models.Sequential(name=config.name)
+    model = models.Sequential(name=config.nombre)
 
     
     model.add(layers.Input(shape=(input_dim,)))
@@ -73,8 +72,8 @@ def compilar_mlp(config: MLPConfig, input_dim: int, num_clases: int = 10):
 # ------------------------------
 # Entrenar y evaluar un MLP según una config
 # ------------------------------
-def probar_MLP(config: MLPConfig):
-    X_train, y_train, X_test, y_test = cargar_y_preprocesar_cifar10_mlp()
+def ejecutar_MLP(config: MLPConfig):
+    X_train, y_train, X_test, y_test = cargar_datos()
 
     input_dim = X_train.shape[1]
     num_clases = y_train.shape[1]
@@ -108,28 +107,28 @@ def probar_MLP(config: MLPConfig):
             ha="center" #alineamiento horizontal
         )
     plt.plot(epochs_range, history.history["val_loss"], label="val loss")
-    plt.title(f"Evolución de la pérdida - {config.name}")
+    plt.title(f"Evolución de la pérdida - {config.nombre}")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(f"{config.name}_loss.png")
+    plt.savefig(f"{config.nombre}_loss.png")
     plt.close()
 
     #Accuracy
     plt.figure()
     plt.plot(epochs_range, history.history["accuracy"], label="train acc")
     plt.plot(epochs_range, history.history["val_accuracy"], label="val acc")
-    plt.title(f"Evolución del accuracy - {config.name}")
+    plt.title(f"Evolución del accuracy - {config.nombre}")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(f"{config.name}_accuracy.png")
+    plt.savefig(f"{config.nombre}_accuracy.png")
     plt.close()
 
     # 2) Gráfica resumen (tiempo + accuracy)
     plt.figure()
     plt.bar(["Train time (s)", "Test accuracy"], [train_time, test_acc])
-    plt.title(f"Resumen del modelo {config.name}")
+    plt.title(f"Resumen del modelo {config.nombre}")
     plt.tight_layout()
-    plt.savefig(f"{config.name}_resumen.png")
+    plt.savefig(f"{config.nombre}_resumen.png")
     plt.close()
 
     #3) matriz de confusión (usando stickit learn)
@@ -141,13 +140,13 @@ def probar_MLP(config: MLPConfig):
 
     plt.figure(figsize=(8, 8))
     disp.plot(cmap="Blues", colorbar=False)
-    plt.title(f"Matriz de confusión - {config.name}")
+    plt.title(f"Matriz de confusión - {config.nombre}")
     plt.tight_layout()
-    plt.savefig(f"{config.name}_confusion_matrix.png")
+    plt.savefig(f"{config.nombre}_confusion_matrix.png")
     plt.close()
 
     return {
-        "name": config.name,
+        "name": config.nombre,
         "train_time": train_time,
         "test_loss": test_loss,
         "test_acc": test_acc,
@@ -159,27 +158,27 @@ def probar_MLP(config: MLPConfig):
 # ------------------------------
 if __name__ == "__main__":
     # Aquí defines las "características" de cada MLP:
-    configs = [
-        MLPConfig(
+    '''MLPConfig( #mlp 1
             nombre="mlp_48_sigmoid",
-            hidden_layers=[48],        # 1 capa oculta de 48 neuronas
+            capas=[48],        # 1 capa oculta de 48 neuronas
             activation="sigmoid",
             epochs=10,
             batch_size=32,
-        ),
+        ),'''
+    configs = [
         MLPConfig(
-            nombre="mlp_48_sigmoid_100",
+            nombre="mlp_48_sigmoid_30_v5",
             capas=[48],        # 1 capa oculta de 48 neuronas
             activation="sigmoid",
-            epochs=100,
+            epochs=30,
             batch_size=32,
         ),
     ]
 
     resultados = []
     for cfg in configs:
-        print(f"\n=== Entrenando {cfg.name} ===")
-        res = probar_MLP(cfg)
+        print(f"\n=== Entrenando {cfg.nombre} ===")
+        res = ejecutar_MLP(cfg)
         resultados.append(res)
 
     #de momento no usar
