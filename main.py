@@ -20,10 +20,7 @@ esa información de manera rápida y elegante, quizás tengas que instalar algun
 Python).
 '''
 
-# ------------------------------
-# Class de los mlps
-# ------------------------------
-@dataclass
+@dataclass #dataclass que representa los mlps
 class MLPConfig:
     nombre: str                     #nombre para graficas
     capas: List[int]      #vector con las neuronas por capa
@@ -44,12 +41,10 @@ def cargar_datos():
     y_train_cat = to_categorical(y_train, num_clases)
     y_test_cat  = to_categorical(y_test, num_clases)
 
-    return X_train, y_train_cat, X_test, y_test_cat
-
+    return X_train, y_train_cat, X_test, y_test_cat, y_test
 
 def compilar_mlp(config: MLPConfig, input_dim: int, num_clases: int = 10):
     model = models.Sequential(name=config.nombre)
-
     
     model.add(layers.Input(shape=(input_dim,)))
 
@@ -65,121 +60,171 @@ def compilar_mlp(config: MLPConfig, input_dim: int, num_clases: int = 10):
         loss="categorical_crossentropy",
         metrics=["accuracy"]
     )
-    print(model.summary())
     return model
 
 
-# ------------------------------
-# Entrenar y evaluar un MLP según una config
-# ------------------------------
 def ejecutar_MLP(config: MLPConfig):
-    X_train, y_train, X_test, y_test = cargar_datos()
+    X_train, y_train, X_test , y_test, y_test_labels = cargar_datos()
 
     input_dim = X_train.shape[1]
     num_clases = y_train.shape[1]
 
-    model = compilar_mlp(config, input_dim, num_clases)
-
+    model = compilar_mlp(config,input_dim,num_clases)
     t0 = time.time()
-    history = model.fit(  # entrenamos con los parámetros indicados
-        X_train, y_train,
-        validation_split=0.1,
-        batch_size=config.batch_size,
-        epochs=config.epochs,
-        verbose=2
+    my_callbacks = [
+        keras.callbacks.EarlyStopping(patience=2)
+    ]
+    history = model.fit(
+        X_train,y_train,
+        validation_split = 0.1, 
+        batch_size = config.batch_size,
+        epochs = config.epochs,
+        verbose = 0,
+        callbacks = my_callbacks
     )
     train_time = time.time() - t0
-
-    test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)  # evaluación en test
-
-    # 1) Gráficas de entrenamiento
-    epochs_range = range(1, len(history.history["loss"]) + 1)
-
-    #pérdida
-    plt.figure()
-    plt.plot(epochs_range, history.history["loss"], label="train loss")
-    for x,y in zip(epochs_range,history.history["loss"]):
-        plt.annotate(
-            f"{y:.3f}",
-            (x,y),
-            textcoords="offset points",
-            xytext=(0,8), #8 arriba del punto
-            ha="center" #alineamiento horizontal
-        )
-    plt.plot(epochs_range, history.history["val_loss"], label="val loss")
-    plt.title(f"Evolución de la pérdida - {config.nombre}")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(f"{config.nombre}_loss.png")
-    plt.close()
-
-    #Accuracy
-    plt.figure()
-    plt.plot(epochs_range, history.history["accuracy"], label="train acc")
-    plt.plot(epochs_range, history.history["val_accuracy"], label="val acc")
-    plt.title(f"Evolución del accuracy - {config.nombre}")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(f"{config.nombre}_accuracy.png")
-    plt.close()
-
-    # 2) Gráfica resumen (tiempo + accuracy)
-    plt.figure()
-    plt.bar(["Train time (s)", "Test accuracy"], [train_time, test_acc])
-    plt.title(f"Resumen del modelo {config.nombre}")
-    plt.tight_layout()
-    plt.savefig(f"{config.nombre}_resumen.png")
-    plt.close()
-
-    #3) matriz de confusión (usando stickit learn)
-    y_pred = np.argmax(model.predict(X_test, verbose=0), axis=1)
-    y_true = np.argmax(y_test, axis=1)
-
-    cm = confusion_matrix(y_true, y_pred)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-
-    plt.figure(figsize=(8, 8))
-    disp.plot(cmap="Blues", colorbar=False)
-    plt.title(f"Matriz de confusión - {config.nombre}")
-    plt.tight_layout()
-    plt.savefig(f"{config.nombre}_confusion_matrix.png")
-    plt.close()
+    
+    test_loss, test_acc = model.evaluate(X_test, y_test)
+    y_pred_probs = model.predict(X_test, verbose=0)
+    y_pred = np.argmax(y_pred_probs, axis=1) #nos quedamos con el mayor valor para cada imagen la que el mlp piensa que es mas esa
 
     return {
-        "name": config.nombre,
         "train_time": train_time,
         "test_loss": test_loss,
         "test_acc": test_acc,
+        "history": history.history,
+        "y_pred": y_pred,
+        "y_test": y_test_labels
     }
 
+def entrenar_varias_veces(config: MLPConfig, repeticiones=5):
+    historial = []
+    for i in range(repeticiones):
+        print(f"Entrenamiento {i+1}/{repeticiones}")
+        resultado = ejecutar_MLP(config)
+        historial.append(resultado)
+    return historial
 
-# ------------------------------
-#varios modelos distintos
-# ------------------------------
+def calcular_media_historial(historial):
+    """
+    Calcula la media del histórico cuando hay EarlyStopping
+    Rellena (pad) con el último valor los arrays más cortos
+    """
+    keys = list(historial[0]["history"].keys())
+    medias = {}
+    
+    # Encontrar la longitud máxima
+    max_length = max(len(h["history"][keys[0]]) for h in historial) #obtenemos el maximo numero de epocas
+    
+    # Obtener número de épocas en cada entrenamiento
+    num_epocas_por_entrenamiento = [len(h["history"][keys[0]]) for h in historial] #obtenemos el numero de epocas de cada repeticion
+    
+    for k in keys:
+        todas = []
+        for h in historial:
+            arr = np.array(h["history"][k])
+            # Si el array es más corto que max_length, rellenar con el último valor
+            if len(arr) < max_length:
+                arr = np.pad(arr, (0, max_length - len(arr)), mode='edge') #rellena hasta max-length con el ultimo valor, para graficar
+            todas.append(arr)
+        medias[k] = np.mean(np.array(todas), axis=0)
+    
+    valores_test = ['train_time', 'test_loss', 'test_acc'] #esto son valroes escalares no es necesario nada
+    for v in valores_test:
+        valores = np.array([h[v] for h in historial])
+        medias[v] = np.mean(valores)
+    
+    return medias, max_length, num_epocas_por_entrenamiento
+
+def plottear_graficas(x, y_list, labels, title, filename):
+    plt.figure(figsize=(10, 6))
+    for y, label in zip(y_list, labels):
+        plt.plot(x, y, label=label, marker='o')
+    
+    plt.title(title)
+    plt.xlabel("Época")
+    plt.ylabel("Valor")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(filename)
+    plt.close()
+    print(f"Gráfica guardada: {filename}")
+
+def matriz_confusion(y_test, y_pred, nombre_modelo, filename):
+    cm = confusion_matrix(y_test, y_pred)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    disp.plot(ax=ax, cmap='Blues') #pintamos la matriz en el area de dinbujo
+    plt.title(f"Matriz de Confusión - {nombre_modelo}")
+    plt.tight_layout()
+    plt.savefig(filename, dpi=150)
+    plt.close()
+    print(f"Matriz de confusión guardada: {filename}")
+
+def probar_mlp(config: MLPConfig, repeticiones):
+    historial = entrenar_varias_veces(config, repeticiones)
+    media, max_epochs, num_epocas = calcular_media_historial(historial)
+    
+    # Mostrar en qué época paró cada entrenamiento
+    print(f"\n=== Información de EarlyStopping ===")
+    print(f"Configuración: {config.nombre}")
+    for i, ep in enumerate(num_epocas):
+        print(f"  Entrenamiento {i+1}: Paró en época {ep}")
+    print(f"Máximo de épocas alcanzado: {max_epochs}")
+    print(f"Promedio de épocas: {np.mean(num_epocas):.1f}")
+    
+    epochs_range = np.arange(1, max_epochs + 1)
+
+    plottear_graficas(
+        epochs_range,
+        [media["accuracy"],
+         media["loss"],
+         media["val_accuracy"],
+         media["val_loss"]],
+         ["Train accuracy", "Train loss", "Val accuracy", "Val loss"],
+         "Evolución entrenamiento",
+         f"{config.nombre}_evolucion_entrenamiento.png"
+    )
+
+    ultimo_resultado = historial[-1]
+    matriz_confusion(
+        ultimo_resultado["y_test"],
+        ultimo_resultado["y_pred"],
+        config.nombre,
+        f"{config.nombre}_matriz_confusion.png"
+    )
+
+    print(f"\nResultados finales de {config.nombre}")
+    print(f"Tiempo de entrenamiento (media): {media['train_time']:.2f}s")
+    print(f"Test Accuracy (media): {media['test_acc']:.4f}")
+    print(f"Test Loss (media): {media['test_loss']:.4f}")
+    print(f"Val Accuracy final (media): {media['val_accuracy'][-1]:.4f}") #el ultimo de ellos
+    print(f"Val Loss final (media): {media['val_loss'][-1]:.4f}") #el ultimo de ellos
+
+
 if __name__ == "__main__":
-    # Aquí defines las "características" de cada MLP:
-    '''MLPConfig( #mlp 1
-            nombre="mlp_48_sigmoid",
+    
+    configs = [
+        MLPConfig( #mlp 1
+            nombre="mlp1",
             capas=[48],        # 1 capa oculta de 48 neuronas
             activation="sigmoid",
             epochs=10,
             batch_size=32,
-        ),'''
-    configs = [
-        MLPConfig(
-            nombre="mlp_48_sigmoid_30_v5",
+        ),
+        MLPConfig( #mlp 2, el callback para de media ahi
+            nombre="mlp2",
             capas=[48],        # 1 capa oculta de 48 neuronas
             activation="sigmoid",
-            epochs=30,
+            epochs=150,
             batch_size=32,
-        ),
+        )
     ]
 
-    resultados = []
-    for cfg in configs:
-        print(f"\n=== Entrenando {cfg.nombre} ===")
-        res = ejecutar_MLP(cfg)
-        resultados.append(res)
+    probar_mlp(configs[1],5)
+
 
     #de momento no usar
     
