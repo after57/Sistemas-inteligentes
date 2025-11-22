@@ -225,75 +225,16 @@ def probar_mlp(config: MLPConfig,ea: EarlyStoppingConfig, repeticiones):
     print(f"Val Accuracy final (media): {media['val_accuracy'][-1]:.4f}") #el ultimo de ellos
     print(f"Val Loss final (media): {media['val_loss'][-1]:.4f}") #el ultimo de ellos
 
-def graficar_comparativa_modelos(resultados: Dict, filename_acc, filename_time):
-    """
-    Grafica barras comparando múltiples modelos
-    
-    Args:
-        resultados: Dict con resultados de modelos
-        filename_acc: Archivo para gráfica de accuracy
-        filename_time: Archivo para gráfica de tiempo
-    """
-    nombres = list(resultados.keys())
-    accs = [resultados[n]["test_acc"] for n in nombres]
-    tiempos = [resultados[n]["train_time"] for n in nombres]
-    
-    # Gráfica de Accuracy
-    fig, ax = plt.subplots(figsize=(12, 5))
-    bars = ax.bar(nombres, accs, alpha=0.8, color='steelblue')
-    ax.set_ylabel("Test Accuracy")
-    ax.set_title("Comparación de Test Accuracy entre Modelos")
-    ax.set_ylim([0, 1])
-    ax.grid(True, alpha=0.3, axis='y')
-    
-    for bar, acc in zip(bars, accs):
-        height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2., height,
-                f'{acc:.4f}', ha='center', va='bottom', fontsize=9)
-    
-    plt.xticks(rotation=45, ha='right')
-    plt.tight_layout()
-    plt.savefig(filename_acc, dpi=150)
-    plt.close()
-    print(f"✓ Gráfica de accuracy guardada: {filename_acc}")
-    
-    # Gráfica de Tiempo
-    fig, ax = plt.subplots(figsize=(12, 5))
-    bars = ax.bar(nombres, tiempos, alpha=0.8, color='orange')
-    ax.set_ylabel("Tiempo (segundos)")
-    ax.set_title("Comparación de Tiempo de Entrenamiento")
-    ax.grid(True, alpha=0.3, axis='y')
-    
-    for bar, t in zip(bars, tiempos):
-        height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2., height,
-                f'{t:.2f}s', ha='center', va='bottom', fontsize=9)
-    
-    plt.xticks(rotation=45, ha='right')
-    plt.tight_layout()
-    plt.savefig(filename_time, dpi=150)
-    plt.close()
-    print(f"✓ Gráfica de tiempo guardada: {filename_time}")
 
 def comparar_earlystoppings(config: MLPConfig, ea_configs: List[EarlyStoppingConfig], repeticiones=3):
-    """
-    Compara múltiples configuraciones de EarlyStopping
-    
-    Args:
-        config: MLPConfig
-        ea_configs: Lista de EarlyStoppingConfig
-        repeticiones: Número de entrenamientos por config
-    """
     resultados = {}
     
-    print(f"\n{'='*70}")
-    print(f"COMPARACIÓN DE EARLYSTOPPING")
+    print("Compracion earlystopping")
     print(f"Modelo: {config.nombre}")
-    print(f"{'='*70}")
     
     for ea in ea_configs:
         config_nombre = f"pat={ea.patience}_delta={ea.min_delta}"
-        config_con_nombre = MLPConfig(
+        config_con_nombre = MLPConfig( #mismo modelo pero el nombre acompañado del early_stopping
             nombre=f"{config.nombre}_{config_nombre}",
             capas=config.capas,
             activation=config.activation,
@@ -306,11 +247,8 @@ def comparar_earlystoppings(config: MLPConfig, ea_configs: List[EarlyStoppingCon
         resultados[config_nombre] = resultado
     
     # Resumen
-    print(f"\n{'='*70}")
     print("RESUMEN COMPARATIVO")
-    print(f"{'='*70}\n")
     print(f"{'EarlyStopping Config':<30} {'Accuracy':<15} {'Tiempo':<15}")
-    print("-" * 60)
     
     for config_nombre, res in sorted(resultados.items(), key=lambda x: x[1]['test_acc'], reverse=True):
         print(f"{config_nombre:<30} {res['test_acc']:.4f}          {res['train_time']:.2f}s")
