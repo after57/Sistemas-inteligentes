@@ -27,9 +27,23 @@ class MLPConfig:
     activation: str               #activacion de las capas intermedias
     epochs: int = 10              #épocas
     batch_size: int = 32          #tamaño de batch
+    verbose: int = 0
 
+@dataclass #dataclass para los distintos earlyStops
+class EarlyStoppingConfig:
+    monitor: str = 'val_loss'
+    patience: int = 10
+    restore_weights: bool = True
+    min_delta: float = 0.001
+    verbose: int = 1
+
+_datos_cacheados = None
 
 def cargar_datos():
+    global _datos_cacheados
+    if _datos_cacheados is not None:
+        return _datos_cacheados
+    
     (X_train, y_train), (X_test, y_test) = keras.datasets.cifar10.load_data()
 
     #shape es (50000, 32, 32, 3) -> (50000, 3072), normalizando píxeles a [0, 1]
@@ -41,7 +55,9 @@ def cargar_datos():
     y_train_cat = to_categorical(y_train, num_clases)
     y_test_cat  = to_categorical(y_test, num_clases)
 
-    return X_train, y_train_cat, X_test, y_test_cat, y_test
+    _datos_cacheados = (X_train, y_train_cat, X_test, y_test_cat, y_test)
+
+    return _datos_cacheados
 
 def compilar_mlp(config: MLPConfig, input_dim: int, num_clases: int = 10):
     model = models.Sequential(name=config.nombre)
@@ -62,8 +78,7 @@ def compilar_mlp(config: MLPConfig, input_dim: int, num_clases: int = 10):
     )
     return model
 
-
-def ejecutar_MLP(config: MLPConfig):
+def entrenar_MLP(config: MLPConfig, ea: EarlyStoppingConfig):
     X_train, y_train, X_test , y_test, y_test_labels = cargar_datos()
 
     input_dim = X_train.shape[1]
@@ -72,20 +87,27 @@ def ejecutar_MLP(config: MLPConfig):
     model = compilar_mlp(config,input_dim,num_clases)
     t0 = time.time()
     my_callbacks = [
-        keras.callbacks.EarlyStopping(patience=2)
+        keras.callbacks.EarlyStopping(
+            monitor= ea.monitor,
+            patience = ea.patience,
+            restore_best_weights = ea.restore_weights,
+            min_delta = ea.min_delta,
+            verbose = ea.verbose
+        )
     ]
     history = model.fit(
         X_train,y_train,
         validation_split = 0.1, 
         batch_size = config.batch_size,
         epochs = config.epochs,
-        verbose = 0,
+        verbose = config.verbose,
         callbacks = my_callbacks
     )
     train_time = time.time() - t0
-    
-    test_loss, test_acc = model.evaluate(X_test, y_test)
-    y_pred_probs = model.predict(X_test, verbose=0)
+
+    test_loss, test_acc = model.evaluate(X_test, y_test,verbose=config.verbose)
+    #esto es para la matriz de confusion donde usaremos esto y el etiquetado del test es decir y_test (sin codificacion one-hot)
+    y_pred_probs = model.predict(X_test, verbose=0) #las probabilidades de cada clase para cada imagen de test
     y_pred = np.argmax(y_pred_probs, axis=1) #nos quedamos con el mayor valor para cada imagen la que el mlp piensa que es mas esa
 
     return {
@@ -97,11 +119,11 @@ def ejecutar_MLP(config: MLPConfig):
         "y_test": y_test_labels
     }
 
-def entrenar_varias_veces(config: MLPConfig, repeticiones=5):
+def entrenar_varias_veces(config: MLPConfig,ea: EarlyStoppingConfig, repeticiones=5):
     historial = []
     for i in range(repeticiones):
         print(f"Entrenamiento {i+1}/{repeticiones}")
-        resultado = ejecutar_MLP(config)
+        resultado = entrenar_MLP(config,ea)
         historial.append(resultado)
     return historial
 
@@ -113,7 +135,7 @@ def calcular_media_historial(historial):
     keys = list(historial[0]["history"].keys())
     medias = {}
     
-    # Encontrar la longitud máxima
+    #encontrar la longitud máxima
     max_length = max(len(h["history"][keys[0]]) for h in historial) #obtenemos el maximo numero de epocas
     
     # Obtener número de épocas en cada entrenamiento
@@ -127,7 +149,7 @@ def calcular_media_historial(historial):
             if len(arr) < max_length:
                 arr = np.pad(arr, (0, max_length - len(arr)), mode='edge') #rellena hasta max-length con el ultimo valor, para graficar
             todas.append(arr)
-        medias[k] = np.mean(np.array(todas), axis=0)
+        medias[k] = np.mean(np.array(todas), axis=0) #hacemos la media entre columnas es decir epoca a epoca con los 5 entrenamientos
     
     valores_test = ['train_time', 'test_loss', 'test_acc'] #esto son valroes escalares no es necesario nada
     for v in valores_test:
@@ -163,8 +185,8 @@ def matriz_confusion(y_test, y_pred, nombre_modelo, filename):
     plt.close()
     print(f"Matriz de confusión guardada: {filename}")
 
-def probar_mlp(config: MLPConfig, repeticiones):
-    historial = entrenar_varias_veces(config, repeticiones)
+def probar_mlp(config: MLPConfig,ea: EarlyStoppingConfig, repeticiones):
+    historial = entrenar_varias_veces(config, ea, repeticiones)
     media, max_epochs, num_epocas = calcular_media_historial(historial)
     
     # Mostrar en qué época paró cada entrenamiento
@@ -203,9 +225,106 @@ def probar_mlp(config: MLPConfig, repeticiones):
     print(f"Val Accuracy final (media): {media['val_accuracy'][-1]:.4f}") #el ultimo de ellos
     print(f"Val Loss final (media): {media['val_loss'][-1]:.4f}") #el ultimo de ellos
 
+def graficar_comparativa_modelos(resultados: Dict, filename_acc, filename_time):
+    """
+    Grafica barras comparando múltiples modelos
+    
+    Args:
+        resultados: Dict con resultados de modelos
+        filename_acc: Archivo para gráfica de accuracy
+        filename_time: Archivo para gráfica de tiempo
+    """
+    nombres = list(resultados.keys())
+    accs = [resultados[n]["test_acc"] for n in nombres]
+    tiempos = [resultados[n]["train_time"] for n in nombres]
+    
+    # Gráfica de Accuracy
+    fig, ax = plt.subplots(figsize=(12, 5))
+    bars = ax.bar(nombres, accs, alpha=0.8, color='steelblue')
+    ax.set_ylabel("Test Accuracy")
+    ax.set_title("Comparación de Test Accuracy entre Modelos")
+    ax.set_ylim([0, 1])
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    for bar, acc in zip(bars, accs):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height,
+                f'{acc:.4f}', ha='center', va='bottom', fontsize=9)
+    
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+    plt.savefig(filename_acc, dpi=150)
+    plt.close()
+    print(f"✓ Gráfica de accuracy guardada: {filename_acc}")
+    
+    # Gráfica de Tiempo
+    fig, ax = plt.subplots(figsize=(12, 5))
+    bars = ax.bar(nombres, tiempos, alpha=0.8, color='orange')
+    ax.set_ylabel("Tiempo (segundos)")
+    ax.set_title("Comparación de Tiempo de Entrenamiento")
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    for bar, t in zip(bars, tiempos):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height,
+                f'{t:.2f}s', ha='center', va='bottom', fontsize=9)
+    
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+    plt.savefig(filename_time, dpi=150)
+    plt.close()
+    print(f"✓ Gráfica de tiempo guardada: {filename_time}")
+
+def comparar_earlystoppings(config: MLPConfig, ea_configs: List[EarlyStoppingConfig], repeticiones=3):
+    """
+    Compara múltiples configuraciones de EarlyStopping
+    
+    Args:
+        config: MLPConfig
+        ea_configs: Lista de EarlyStoppingConfig
+        repeticiones: Número de entrenamientos por config
+    """
+    resultados = {}
+    
+    print(f"\n{'='*70}")
+    print(f"COMPARACIÓN DE EARLYSTOPPING")
+    print(f"Modelo: {config.nombre}")
+    print(f"{'='*70}")
+    
+    for ea in ea_configs:
+        config_nombre = f"pat={ea.patience}_delta={ea.min_delta}"
+        config_con_nombre = MLPConfig(
+            nombre=f"{config.nombre}_{config_nombre}",
+            capas=config.capas,
+            activation=config.activation,
+            epochs=config.epochs,
+            batch_size=config.batch_size,
+            verbose=0
+        )
+        
+        resultado = probar_mlp(config_con_nombre, ea, repeticiones)
+        resultados[config_nombre] = resultado
+    
+    # Resumen
+    print(f"\n{'='*70}")
+    print("RESUMEN COMPARATIVO")
+    print(f"{'='*70}\n")
+    print(f"{'EarlyStopping Config':<30} {'Accuracy':<15} {'Tiempo':<15}")
+    print("-" * 60)
+    
+    for config_nombre, res in sorted(resultados.items(), key=lambda x: x[1]['test_acc'], reverse=True):
+        print(f"{config_nombre:<30} {res['test_acc']:.4f}          {res['train_time']:.2f}s")
+    
+    # Gráficas comparativas
+    graficar_comparativa_modelos(
+        resultados,
+        "comparativa_earlystopping_accuracy.png",
+        "comparativa_earlystopping_tiempo.png"
+    )
 
 if __name__ == "__main__":
     
+    batch_sizes = [16,32,64,128,256,512,1024] #batch_sizes a probar
     configs = [
         MLPConfig( #mlp 1
             nombre="mlp1",
@@ -213,17 +332,27 @@ if __name__ == "__main__":
             activation="sigmoid",
             epochs=10,
             batch_size=32,
+            verbose=1
         ),
         MLPConfig( #mlp 2, el callback para de media ahi
-            nombre="mlp2",
+            nombre="mlp2_patience_2_agresivo",
             capas=[48],        # 1 capa oculta de 48 neuronas
             activation="sigmoid",
             epochs=150,
             batch_size=32,
+            verbose=1
         )
     ]
 
-    probar_mlp(configs[1],5)
+    early_stopping_configs = [
+        EarlyStoppingConfig(monitor='val_loss', patience=2, min_delta=0.005, verbose=0),
+        EarlyStoppingConfig(monitor='val_loss', patience=3, min_delta=0.002, verbose=0),
+        EarlyStoppingConfig(monitor='val_loss', patience=5, min_delta=0.001, verbose=0),
+        EarlyStoppingConfig(monitor='val_loss', patience=7, min_delta=0.0005, verbose=0),
+        EarlyStoppingConfig(monitor='val_loss', patience=10, min_delta=0.0001, verbose=0),
+    ]
+
+    probar_mlp(configs[1],early_stopping_configs[0],5)
 
 
     #de momento no usar
