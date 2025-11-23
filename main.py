@@ -365,6 +365,26 @@ def probar_activaciones_inicializaciones(config: MLPConfig, ea: EarlyStoppingCon
 
     comparativa_modelos(resultados,"comparativa_activaciones_inicializaciones.png")
 
+def probar_neuronas(config: MLPConfig, ea: EarlyStoppingConfig, neuronas: List[int], repeticiones: int = 5):
+    resultados = {}
+    print("Comparando neuronas")
+    for n in neuronas:
+        config_nombre = f"neuronas_{n}"
+        print(f"Probando {n} neuronas")
+        config_con_parametros = MLPConfig(
+            nombre=f"{config.nombre}_{config_nombre}",
+            capas=[n],
+            activation=config.activation,
+            epochs=config.epochs,
+            batch_size=config.batch_size,
+            verbose=0,
+            initializer=config.initializer
+        )
+        resultado = probar_mlp(config_con_parametros,ea,repeticiones)
+        resultados[config_nombre] = resultado
+    
+    comparativa_modelos(resultados,"comprativa_neuronas.png")
+
 if __name__ == "__main__":
     
     batch_sizes = [16,32,64,128,256,512,1024,2048] #batch_sizes a probar
@@ -400,7 +420,17 @@ if __name__ == "__main__":
             activation="sigmoid",
             epochs=200,
             batch_size=256, #el mejor segun las pruebas
-            verbose=0
+            verbose=0,
+            initializer= "glorot_uniform"
+        ),
+        MLPConfig( #mlp 5, usamos el callback 2 mejor callback obetenido hasta ahora, muchas epocas
+            nombre="mlp5",
+            capas=[48],        
+            activation="sigmoid",
+            epochs=200,
+            batch_size=256, #el mejor segun las pruebas
+            verbose=0,
+            initializer= "glorot_uniform"
         )
     ]
     early_stopping_configs = [ #earlystoppings a probar, grafica ya generada
@@ -413,17 +443,20 @@ if __name__ == "__main__":
 
     activaciones_inicializaciones = [
         ("relu", "he_normal"),
-        ("sigmoid", "glorot_uniform"),
+        ("sigmoid", "glorot_uniform"), #mejor resultado arquitectura simple
         ("tanh", "glorot_uniform"),
         ("relu", "he_uniform"),
         ("leaky_relu", "he_normal"),  # para LeakyReLU habría que añadir la capa manualmente
         ("leaky_relu","he_uniform")
     ]
+    neuronas = [12,24,48,60,80,96,100,120,150]
+
 
     #probar_mlp(configs[1],early_stopping_configs[0],5,False)
     #comparar_earlystoppings(configs[1],early_stopping_configs,5)
     #probar_batch_size(configs[2],early_stopping_configs[2],batch_sizes)
-    probar_activaciones_inicializaciones(configs[3],early_stopping_configs[2],activaciones_inicializaciones,5)
+    #probar_activaciones_inicializaciones(configs[3],early_stopping_configs[2],activaciones_inicializaciones,5)
+    probar_neuronas(configs[4],early_stopping_configs[2],neuronas,5)
 
 
 
