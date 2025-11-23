@@ -232,7 +232,6 @@ def entrenar_MLP(config: MLPConfig, ea: EarlyStoppingConfig, usar_ea: bool = Tru
         "y_test": y_test_labels #el resultado que es sin codificacion one hot
     }
     
-
 def probar_mlp(config: MLPConfig, ea: EarlyStoppingConfig, repeticiones: int = 5, usar_ea: bool = True):
     historial = []
     for i in range(repeticiones):
@@ -309,12 +308,35 @@ def comparar_earlystoppings(config: MLPConfig, ea_configs: List[EarlyStoppingCon
         "comparativa_earlystopping_accuracy.png"
     )
 
-def probar_batch_size():
-    pass
+def probar_batch_size(config: MLPConfig, ea: EarlyStoppingConfig, batch_sizes: list[int]):
+    resultados = {}
+    print("Comparando batch_sizes")
+
+    for bs in batch_sizes:
+        config_nombre = f"batch_{bs}"
+        print(f"Porbando el batch_size {bs}")
+        config_con_parametros = MLPConfig(
+            nombre=f"{config.nombre}_{config_nombre}",
+            capas = config.capas,
+            activation = config.activation,
+            epochs = config.epochs,
+            batch_size = bs,
+            verbose = 0
+        )
+        resultado = probar_mlp(config_con_parametros,ea,5)
+        resultados[config_nombre] = resultado
+
+    comparativa_modelos(
+        resultados,
+        "comprativa_batch_sizes.png"
+    )
+    
+
 
 if __name__ == "__main__":
     
-    batch_sizes = [16,32,64,128,256,512,1024] #batch_sizes a probar
+    batch_sizes = [16,32,64,128,256,512,1024,2048] #batch_sizes a probar
+    #mejor batch_size 256
     configs = [
         MLPConfig( #mlp 1
             nombre="mlp1",
@@ -328,20 +350,35 @@ if __name__ == "__main__":
             nombre="mlp2",
             capas=[48],        
             activation="sigmoid",
-            epochs=50,
+            epochs=200,
             batch_size=32,
+            verbose=0
+        ),
+        MLPConfig( #mlp 3, usamos el callback 2 mejor callback obetenido hasta ahora, muchas epocas
+            nombre="mlp3",
+            capas=[48],        
+            activation="sigmoid",
+            epochs=200,
+            batch_size=256, #el mejor segun las pruebas
             verbose=0
         )
     ]
     early_stopping_configs = [ #earlystoppings a probar, grafica ya generada
+        EarlyStoppingConfig(monitor='val_loss', patience=1, min_delta=0.009, verbose=0),
         EarlyStoppingConfig(monitor='val_loss', patience=2, min_delta=0.005, verbose=0),
         EarlyStoppingConfig(monitor='val_loss', patience=3, min_delta=0.002, verbose=0),
-        EarlyStoppingConfig(monitor='val_loss', patience=5, min_delta=0.001, verbose=0),
+        EarlyStoppingConfig(monitor='val_loss', patience=5, min_delta=0.001, verbose=0), #para mi este es el mejor
         EarlyStoppingConfig(monitor='val_loss', patience=7, min_delta=0.0005, verbose=0),
         EarlyStoppingConfig(monitor='val_loss', patience=10, min_delta=0.0001, verbose=0),
     ]
 
-    probar_mlp(configs[1],early_stopping_configs[0],5,False)
+    #probar_mlp(configs[1],early_stopping_configs[0],5,False)
     comparar_earlystoppings(configs[1],early_stopping_configs,5)
+    #probar_batch_size(configs[2],early_stopping_configs[2],batch_sizes)
+
+
+
+
+
 
 
