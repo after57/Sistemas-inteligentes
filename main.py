@@ -449,7 +449,7 @@ if __name__ == "__main__":
         ("leaky_relu", "he_normal"),  # para LeakyReLU habría que añadir la capa manualmente
         ("leaky_relu","he_uniform")
     ]
-    neuronas = [12,24,48,60,80,96,100,120,150]
+    neuronas = [12,24,48,60,80,96,100,120,150] #entre 60-80 neuronas lo mejor
 
 
     #probar_mlp(configs[1],early_stopping_configs[0],5,False)
