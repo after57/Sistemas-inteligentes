@@ -364,17 +364,16 @@ if __name__ == "__main__":
         )
     ]
     early_stopping_configs = [ #earlystoppings a probar, grafica ya generada
-        EarlyStoppingConfig(monitor='val_loss', patience=1, min_delta=0.009, verbose=0),
         EarlyStoppingConfig(monitor='val_loss', patience=2, min_delta=0.005, verbose=0),
         EarlyStoppingConfig(monitor='val_loss', patience=3, min_delta=0.002, verbose=0),
         EarlyStoppingConfig(monitor='val_loss', patience=5, min_delta=0.001, verbose=0), #para mi este es el mejor
         EarlyStoppingConfig(monitor='val_loss', patience=7, min_delta=0.0005, verbose=0),
-        EarlyStoppingConfig(monitor='val_loss', patience=10, min_delta=0.0001, verbose=0),
+        EarlyStoppingConfig(monitor='val_loss', patience=10, min_delta=0.0001, verbose=0)
     ]
 
     #probar_mlp(configs[1],early_stopping_configs[0],5,False)
-    comparar_earlystoppings(configs[1],early_stopping_configs,5)
-    #probar_batch_size(configs[2],early_stopping_configs[2],batch_sizes)
+    #comparar_earlystoppings(configs[1],early_stopping_configs,5)
+    probar_batch_size(configs[2],early_stopping_configs[2],batch_sizes)
 
 
 
