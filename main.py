@@ -7,6 +7,7 @@ import time
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from dataclasses import dataclass
 from typing import List
+import tensorflow as tf
 
 '''
 1. La gráfica de líneas que muestren la evolución de la pérdida y la tasa de acierto para el conjunto de 
@@ -41,6 +42,7 @@ _datos_cacheados = None
 
 def cargar_datos():
     global _datos_cacheados
+    
     if _datos_cacheados is not None:
         return _datos_cacheados
     
@@ -58,6 +60,113 @@ def cargar_datos():
     _datos_cacheados = (X_train, y_train_cat, X_test, y_test_cat, y_test)
 
     return _datos_cacheados
+
+def calcular_media_historial(historial):
+
+    keys = list(historial[0]["history"].keys()) #sacamos todas las métricas,
+    print(f"Keys del histro {keys}")
+    #recordar que historial es una lista de diccionarios y history es otro diccionario dentro de ese con train y val
+    medias = {}
+    
+    #encontrar la longitud máxima
+    max_length = max(len(h["history"][keys[0]]) for h in historial) #obtenemos el maximo numero de epocas, el len de una metrica de history
+    
+    #numero de épocas por cada repitcion del entrenamiento, varia por el factor de aleatorio de cada entrenamiento
+    num_epocas_por_entrenamiento = [len(h["history"][keys[0]]) for h in historial] #obtenemos el numero de epocas de cada repeticion
+    
+    for k in keys: 
+        todas = []
+        for h in historial:
+            arr = np.array(h["history"][k]) #en history estaba acc,loss,val_loss y val_acc
+
+            if len(arr) < max_length: #si faltan valores para calcular la media
+                arr = np.pad(arr, (0, max_length - len(arr)), mode='edge') #rellena hasta max-length con el ultimo valor, para graficar y la media
+            todas.append(arr)
+        medias[k] = np.mean(np.array(todas), axis=0) #hacemos la media aritmetica entre columnas es decir epoca a epoca con los 5 entrenamientos
+
+    valores_test = ['train_time', 'test_loss', 'test_acc'] #esto son valroes escalares no es necesario nada
+    for v in valores_test:
+        valores = np.array([h[v] for h in historial])
+        medias[v] = np.mean(valores)
+    
+    return medias, max_length, num_epocas_por_entrenamiento
+
+def comparativa_modelos(resultados, filename):
+ 
+    nombres = list(resultados.keys()) #recordemos resultados es un diccionario de diccionarios, a cada nombre esta el train,history y test_acc
+    accs = [resultados[n]["test_acc"] for n in nombres]
+    tiempos = [resultados[n]["train_time"] for n in nombres]
+    
+    fig, ax1 = plt.subplots(figsize=(14, 7)) #tamaño de la imagen
+    
+    x = np.arange(len(nombres)) #creamos un array para plotear los distintos modelos
+    width = 0.35 #el ancho de cada barra, una dede x-width/2 hasta x+width/2
+    
+    #eje izquierdo: Accuracy
+    bars1 = ax1.bar(x - width/2, accs, width, alpha=0.8, color='steelblue', label='Test Accuracy')
+    ax1.set_xlabel("Modelo", fontsize=11, fontweight='bold')
+    ax1.set_ylabel("Test Accuracy", fontsize=11, fontweight='bold', color='steelblue')
+    ax1.set_ylim([0, 1]) #de 0 a 1
+    #ax1.tick_params(axis='y', labelcolor='steelblue')
+    #ax1.grid(True, alpha=0.3, axis='y')
+    
+    for bar, acc in zip(bars1, accs): #añadimos los valores encima de cada barra
+        height = bar.get_height() #a que altura termina la barra
+        ax1.text(bar.get_x() + bar.get_width()/2., height, #corrdenadas del texto
+                f'{acc:.4f}', ha='center', va='bottom', fontsize=9, color='steelblue', fontweight='bold')
+    
+    #eje derecho: Tiempo
+    ax2 = ax1.twinx() #segundo eje y con el mismo eje x
+    bars2 = ax2.bar(x + width/2, tiempos, width, alpha=0.8, color='orange', label='Tiempo (s)')
+    ax2.set_ylabel("Tiempo (segundos)", fontsize=11, fontweight='bold', color='orange')
+    ax2.tick_params(axis='y', labelcolor='orange')
+    
+    for bar, t in zip(bars2, tiempos): #añadimos los valores encima de cada barra
+        height = bar.get_height()
+        ax2.text(bar.get_x() + bar.get_width()/2., height,
+                f'{t:.2f}s', ha='center', va='bottom', fontsize=9, color='orange', fontweight='bold')
+    
+    # Configurar eje X
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(nombres, rotation=45, ha='right', fontsize=9) #
+    
+    plt.title("Comparación de Accuracy y Tiempo de Entrenamiento", fontsize=13, fontweight='bold', pad=20)
+    
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=10)  #las lineas son los colores
+    
+    plt.tight_layout() #ajustar margenes
+    plt.savefig(filename, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"Gráfica comparativa guardada: {filename}")
+
+def plottear_graficas(x, y_list, labels, title, filename):
+    plt.figure(figsize=(10, 6)) #definimos fig_size
+
+    for y, label in zip(y_list, labels): #cada valor y va asociado a la etiqueta de que estamos plotteando, x siempre son las épocas
+        plt.plot(x, y, label=label, marker='o')
+    
+    plt.title(title)
+    plt.xlabel("Época")
+    plt.ylabel("Valor")
+    plt.legend()
+    plt.tight_layout() #para que se ajuste el padding y no se colapsen las imagenes
+    plt.savefig(filename)
+    plt.close()
+    print(f"Gráfica guardada: {filename}")
+
+def matriz_confusion(y_test, y_pred, nombre_modelo, filename):
+    cm = confusion_matrix(y_test, y_pred) #valor real y prediccion
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    disp.plot(ax=ax, cmap='Blues') #pintamos la matriz en el area de dinbujo, colormap azul podría poner otro
+    plt.title(f"Matriz de Confusión - {nombre_modelo}")
+    plt.tight_layout()
+    plt.savefig(filename)
+    plt.close()
+    print(f"Matriz de confusión guardada: {filename}")
 
 def compilar_mlp(config: MLPConfig, input_dim: int, num_clases: int = 10):
     model = models.Sequential(name=config.nombre)
@@ -78,122 +187,64 @@ def compilar_mlp(config: MLPConfig, input_dim: int, num_clases: int = 10):
     )
     return model
 
-def entrenar_MLP(config: MLPConfig, ea: EarlyStoppingConfig):
+def entrenar_MLP(config: MLPConfig, ea: EarlyStoppingConfig, usar_ea: bool = True):
+
     X_train, y_train, X_test , y_test, y_test_labels = cargar_datos()
 
     input_dim = X_train.shape[1]
     num_clases = y_train.shape[1]
 
+   
+    my_callbacks = None
+    if usar_ea:
+        my_callbacks = [
+            keras.callbacks.EarlyStopping(
+                monitor= ea.monitor,
+                patience = ea.patience,
+                restore_best_weights = ea.restore_weights,
+                min_delta = ea.min_delta,
+                verbose = ea.verbose
+            )
+        ]
+    tf.keras.backend.clear_session()
     model = compilar_mlp(config,input_dim,num_clases)
+    
     t0 = time.time()
-    my_callbacks = [
-        keras.callbacks.EarlyStopping(
-            monitor= ea.monitor,
-            patience = ea.patience,
-            restore_best_weights = ea.restore_weights,
-            min_delta = ea.min_delta,
-            verbose = ea.verbose
-        )
-    ]
     history = model.fit(
         X_train,y_train,
         validation_split = 0.1, 
         batch_size = config.batch_size,
         epochs = config.epochs,
         verbose = config.verbose,
-        callbacks = my_callbacks
+        callbacks =  my_callbacks if my_callbacks else []
     )
     train_time = time.time() - t0
-
     test_loss, test_acc = model.evaluate(X_test, y_test,verbose=config.verbose)
     #esto es para la matriz de confusion donde usaremos esto y el etiquetado del test es decir y_test (sin codificacion one-hot)
     y_pred_probs = model.predict(X_test, verbose=0) #las probabilidades de cada clase para cada imagen de test
     y_pred = np.argmax(y_pred_probs, axis=1) #nos quedamos con el mayor valor para cada imagen la que el mlp piensa que es mas esa
-
-    return {
+    return{
         "train_time": train_time,
         "test_loss": test_loss,
         "test_acc": test_acc,
-        "history": history.history,
-        "y_pred": y_pred,
-        "y_test": y_test_labels
+        "history": history.history, #train y validation esta aqui, accuracy,loss,val_acc,val_loss
+        "y_pred": y_pred, #esto son los valores para la matriz de confusion
+        "y_test": y_test_labels #el resultado que es sin codificacion one hot
     }
+    
 
-def entrenar_varias_veces(config: MLPConfig,ea: EarlyStoppingConfig, repeticiones=5):
+def probar_mlp(config: MLPConfig, ea: EarlyStoppingConfig, repeticiones: int = 5, usar_ea: bool = True):
     historial = []
     for i in range(repeticiones):
-        print(f"Entrenamiento {i+1}/{repeticiones}")
-        resultado = entrenar_MLP(config,ea)
+        resultado = entrenar_MLP(config,ea,usar_ea)
         historial.append(resultado)
-    return historial
 
-def calcular_media_historial(historial):
-    """
-    Calcula la media del histórico cuando hay EarlyStopping
-    Rellena (pad) con el último valor los arrays más cortos
-    """
-    keys = list(historial[0]["history"].keys())
-    medias = {}
-    
-    #encontrar la longitud máxima
-    max_length = max(len(h["history"][keys[0]]) for h in historial) #obtenemos el maximo numero de epocas
-    
-    # Obtener número de épocas en cada entrenamiento
-    num_epocas_por_entrenamiento = [len(h["history"][keys[0]]) for h in historial] #obtenemos el numero de epocas de cada repeticion
-    
-    for k in keys:
-        todas = []
-        for h in historial:
-            arr = np.array(h["history"][k])
-            # Si el array es más corto que max_length, rellenar con el último valor
-            if len(arr) < max_length:
-                arr = np.pad(arr, (0, max_length - len(arr)), mode='edge') #rellena hasta max-length con el ultimo valor, para graficar
-            todas.append(arr)
-        medias[k] = np.mean(np.array(todas), axis=0) #hacemos la media entre columnas es decir epoca a epoca con los 5 entrenamientos
-    
-    valores_test = ['train_time', 'test_loss', 'test_acc'] #esto son valroes escalares no es necesario nada
-    for v in valores_test:
-        valores = np.array([h[v] for h in historial])
-        medias[v] = np.mean(valores)
-    
-    return medias, max_length, num_epocas_por_entrenamiento
-
-def plottear_graficas(x, y_list, labels, title, filename):
-    plt.figure(figsize=(10, 6))
-    for y, label in zip(y_list, labels):
-        plt.plot(x, y, label=label, marker='o')
-    
-    plt.title(title)
-    plt.xlabel("Época")
-    plt.ylabel("Valor")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(filename)
-    plt.close()
-    print(f"Gráfica guardada: {filename}")
-
-def matriz_confusion(y_test, y_pred, nombre_modelo, filename):
-    cm = confusion_matrix(y_test, y_pred)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-    
-    fig, ax = plt.subplots(figsize=(10, 8))
-    disp.plot(ax=ax, cmap='Blues') #pintamos la matriz en el area de dinbujo
-    plt.title(f"Matriz de Confusión - {nombre_modelo}")
-    plt.tight_layout()
-    plt.savefig(filename, dpi=150)
-    plt.close()
-    print(f"Matriz de confusión guardada: {filename}")
-
-def probar_mlp(config: MLPConfig,ea: EarlyStoppingConfig, repeticiones):
-    historial = entrenar_varias_veces(config, ea, repeticiones)
     media, max_epochs, num_epocas = calcular_media_historial(historial)
-    
-    # Mostrar en qué época paró cada entrenamiento
-    print(f"\n=== Información de EarlyStopping ===")
+    #mostrar en qué época paró cada entrenamiento
+    print(f"Información de EarlyStopping")
     print(f"Configuración: {config.nombre}")
-    for i, ep in enumerate(num_epocas):
-        print(f"  Entrenamiento {i+1}: Paró en época {ep}")
+    for i,ep in enumerate(num_epocas):
+        print(f"Entrenamiento {i+1} paro en la epoca: {ep}")
     print(f"Máximo de épocas alcanzado: {max_epochs}")
     print(f"Promedio de épocas: {np.mean(num_epocas):.1f}")
     
@@ -201,13 +252,13 @@ def probar_mlp(config: MLPConfig,ea: EarlyStoppingConfig, repeticiones):
 
     plottear_graficas(
         epochs_range,
-        [media["accuracy"],
+        [media["accuracy"], #y_list
          media["loss"],
          media["val_accuracy"],
          media["val_loss"]],
-         ["Train accuracy", "Train loss", "Val accuracy", "Val loss"],
+         ["Train accuracy", "Train loss", "Val accuracy", "Val loss"], #y_labels
          "Evolución entrenamiento",
-         f"{config.nombre}_evolucion_entrenamiento.png"
+         f"{config.nombre}_evolucion_entrenamiento.png" #nombre para el archivo
     )
 
     ultimo_resultado = historial[-1]
@@ -223,17 +274,23 @@ def probar_mlp(config: MLPConfig,ea: EarlyStoppingConfig, repeticiones):
     print(f"Test Accuracy (media): {media['test_acc']:.4f}")
     print(f"Test Loss (media): {media['test_loss']:.4f}")
     print(f"Val Accuracy final (media): {media['val_accuracy'][-1]:.4f}") #el ultimo de ellos
-    print(f"Val Loss final (media): {media['val_loss'][-1]:.4f}") #el ultimo de ellos
+    print(f"Val Loss final (media): {media['val_loss'][-1]:.4f}",'\n') #el ultimo de ellos
 
+    return {
+        "test_acc": media['test_acc'],
+        "test_loss": media['test_loss'],
+        "train_time": media['train_time'],
+        "media": media  #el array con las medias de los valores del entrenamiento
+    }
 
-def comparar_earlystoppings(config: MLPConfig, ea_configs: List[EarlyStoppingConfig], repeticiones=3):
-    resultados = {}
+def comparar_earlystoppings(config: MLPConfig, ea_configs: List[EarlyStoppingConfig], repeticiones=5): #para el mlp2, probar diferentes stops
+    resultados = {} #diccionario para guardar los resultado de cada earlyStopping con el modelo
     
-    print("Compracion earlystopping")
-    print(f"Modelo: {config.nombre}")
+    print("Compracion earlystoppings")
     
     for ea in ea_configs:
-        config_nombre = f"pat={ea.patience}_delta={ea.min_delta}"
+        config_nombre = f"pat_{ea.patience}_delta_{ea.min_delta}"
+        print(f"Probando earlyStopping {config_nombre}")
         config_con_nombre = MLPConfig( #mismo modelo pero el nombre acompañado del early_stopping
             nombre=f"{config.nombre}_{config_nombre}",
             capas=config.capas,
@@ -244,21 +301,16 @@ def comparar_earlystoppings(config: MLPConfig, ea_configs: List[EarlyStoppingCon
         )
         
         resultado = probar_mlp(config_con_nombre, ea, repeticiones)
-        resultados[config_nombre] = resultado
-    
-    # Resumen
-    print("RESUMEN COMPARATIVO")
-    print(f"{'EarlyStopping Config':<30} {'Accuracy':<15} {'Tiempo':<15}")
-    
-    for config_nombre, res in sorted(resultados.items(), key=lambda x: x[1]['test_acc'], reverse=True):
-        print(f"{config_nombre:<30} {res['test_acc']:.4f}          {res['train_time']:.2f}s")
+        resultados[config_nombre] = resultado #creamos un diccionario de diccionario donde es { nombre:{"train_time": valor}}
     
     # Gráficas comparativas
-    graficar_comparativa_modelos(
+    comparativa_modelos(
         resultados,
-        "comparativa_earlystopping_accuracy.png",
-        "comparativa_earlystopping_tiempo.png"
+        "comparativa_earlystopping_accuracy.png"
     )
+
+def probar_batch_size():
+    pass
 
 if __name__ == "__main__":
     
@@ -273,16 +325,15 @@ if __name__ == "__main__":
             verbose=1
         ),
         MLPConfig( #mlp 2, el callback para de media ahi
-            nombre="mlp2_patience_2_agresivo",
-            capas=[48],        # 1 capa oculta de 48 neuronas
+            nombre="mlp2",
+            capas=[48],        
             activation="sigmoid",
-            epochs=150,
+            epochs=50,
             batch_size=32,
-            verbose=1
+            verbose=0
         )
     ]
-
-    early_stopping_configs = [
+    early_stopping_configs = [ #earlystoppings a probar, grafica ya generada
         EarlyStoppingConfig(monitor='val_loss', patience=2, min_delta=0.005, verbose=0),
         EarlyStoppingConfig(monitor='val_loss', patience=3, min_delta=0.002, verbose=0),
         EarlyStoppingConfig(monitor='val_loss', patience=5, min_delta=0.001, verbose=0),
@@ -290,28 +341,7 @@ if __name__ == "__main__":
         EarlyStoppingConfig(monitor='val_loss', patience=10, min_delta=0.0001, verbose=0),
     ]
 
-    probar_mlp(configs[1],early_stopping_configs[0],5)
+    probar_mlp(configs[1],early_stopping_configs[0],5,False)
+    comparar_earlystoppings(configs[1],early_stopping_configs,5)
 
 
-    #de momento no usar
-    
-    '''
-    nombres = [r["name"] for r in resultados]
-    accs = [r["test_acc"] for r in resultados]
-    tiempos = [r["train_time"] for r in resultados]
-    plt.figure()
-    plt.bar(nombres, accs)
-    plt.title("Comparación de accuracy en test entre modelos")
-    plt.ylabel("Accuracy")
-    plt.tight_layout()
-    plt.savefig("comparativa_accuracy_modelos.png")
-    plt.close()
-
-    plt.figure()
-    plt.bar(nombres, tiempos)
-    plt.title("Comparación de tiempo de entrenamiento entre modelos")
-    plt.ylabel("Tiempo (s)")
-    plt.tight_layout()
-    plt.savefig("comparativa_tiempo_modelos.png")
-    plt.close()
-    '''
