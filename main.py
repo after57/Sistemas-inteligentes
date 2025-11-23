@@ -29,6 +29,7 @@ class MLPConfig:
     epochs: int = 10              #épocas
     batch_size: int = 32          #tamaño de batch
     verbose: int = 0
+    initializer: str = "glorot_uniform"
 
 @dataclass #dataclass para los distintos earlyStops
 class EarlyStoppingConfig:
@@ -47,7 +48,12 @@ def cargar_datos():
         return _datos_cacheados
     
     (X_train, y_train), (X_test, y_test) = keras.datasets.cifar10.load_data()
-
+    """
+    Prueba distintas combinaciones de activación e inicialización de pesos en el MLP.
+    
+    activaciones_inicializaciones: lista de tuplas (activation, initializer)
+        Ejemplo: [("relu", "he_normal"), ("sigmoid", "glorot_uniform")]
+    """
     #shape es (50000, 32, 32, 3) -> (50000, 3072), normalizando píxeles a [0, 1]
     X_train = X_train.reshape((X_train.shape[0], -1)).astype("float32") / 255.0
     X_test  = X_test.reshape((X_test.shape[0], -1)).astype("float32") / 255.0
@@ -175,7 +181,11 @@ def compilar_mlp(config: MLPConfig, input_dim: int, num_clases: int = 10):
 
     #capas
     for units in config.capas:
-        model.add(layers.Dense(units, activation=config.activation))
+        if config.activation == "leaky_relu":
+            model.add(layers.Dense(units, kernel_initializer=config.initializer))
+            model.add(layers.LeakyReLU(alpha=0.1))
+        else:
+            model.add(layers.Dense(units, activation=config.activation, kernel_initializer=config.initializer))
 
     #capa de salida: num_clases neuronas con softmax
     model.add(layers.Dense(num_clases, activation="softmax"))
@@ -330,8 +340,30 @@ def probar_batch_size(config: MLPConfig, ea: EarlyStoppingConfig, batch_sizes: l
         resultados,
         "comprativa_batch_sizes.png"
     )
-    
 
+def probar_activaciones_inicializaciones(config: MLPConfig, ea: EarlyStoppingConfig, activaciones_inicializaciones: List[tuple], repeticiones: int = 5):
+  
+    resultados = {}
+    print("Comparando activaciones e inicializaciones")
+
+    for act, init in activaciones_inicializaciones: #recorremos la tupla
+        config_nombre = f"{act}_{init}"
+        print(f"Probando activación {act} con inicialización {init}")
+        
+        config_con_parametros = MLPConfig(
+            nombre=f"{config.nombre}_{config_nombre}",
+            capas=config.capas,
+            activation=act,
+            epochs=config.epochs,
+            batch_size=config.batch_size,
+            verbose=0,
+            initializer=init
+        )
+        resultado = probar_mlp(config_con_parametros, ea, repeticiones)
+        resultados[config_nombre] = resultado
+
+
+    comparativa_modelos(resultados,"comparativa_activaciones_inicializaciones.png")
 
 if __name__ == "__main__":
     
@@ -361,6 +393,14 @@ if __name__ == "__main__":
             epochs=200,
             batch_size=256, #el mejor segun las pruebas
             verbose=0
+        ),
+        MLPConfig( #mlp 4, usamos el callback 2 mejor callback obetenido hasta ahora, muchas epocas
+            nombre="mlp4",
+            capas=[48],        
+            activation="sigmoid",
+            epochs=200,
+            batch_size=256, #el mejor segun las pruebas
+            verbose=0
         )
     ]
     early_stopping_configs = [ #earlystoppings a probar, grafica ya generada
@@ -371,9 +411,19 @@ if __name__ == "__main__":
         EarlyStoppingConfig(monitor='val_loss', patience=10, min_delta=0.0001, verbose=0)
     ]
 
+    activaciones_inicializaciones = [
+        ("relu", "he_normal"),
+        ("sigmoid", "glorot_uniform"),
+        ("tanh", "glorot_uniform"),
+        ("relu", "he_uniform"),
+        ("leaky_relu", "he_normal"),  # para LeakyReLU habría que añadir la capa manualmente
+        ("leaky_relu","he_uniform")
+    ]
+
     #probar_mlp(configs[1],early_stopping_configs[0],5,False)
     #comparar_earlystoppings(configs[1],early_stopping_configs,5)
-    probar_batch_size(configs[2],early_stopping_configs[2],batch_sizes)
+    #probar_batch_size(configs[2],early_stopping_configs[2],batch_sizes)
+    probar_activaciones_inicializaciones(configs[3],early_stopping_configs[2],activaciones_inicializaciones,5)
 
 
 
