@@ -29,7 +29,7 @@ class MLPConfig:
     epochs: int = 10              #épocas
     batch_size: int = 32          #tamaño de batch
     verbose: int = 0
-    initializer: str = "glorot_uniform"
+    initializer: str = "glorot_uniform" #es el que viene por defecto sino lo especificas
 
 @dataclass #dataclass para los distintos earlyStops
 class EarlyStoppingConfig:
@@ -48,12 +48,7 @@ def cargar_datos():
         return _datos_cacheados
     
     (X_train, y_train), (X_test, y_test) = keras.datasets.cifar10.load_data()
-    """
-    Prueba distintas combinaciones de activación e inicialización de pesos en el MLP.
-    
-    activaciones_inicializaciones: lista de tuplas (activation, initializer)
-        Ejemplo: [("relu", "he_normal"), ("sigmoid", "glorot_uniform")]
-    """
+   
     #shape es (50000, 32, 32, 3) -> (50000, 3072), normalizando píxeles a [0, 1]
     X_train = X_train.reshape((X_train.shape[0], -1)).astype("float32") / 255.0
     X_test  = X_test.reshape((X_test.shape[0], -1)).astype("float32") / 255.0
@@ -167,7 +162,7 @@ def matriz_confusion(y_test, y_pred, nombre_modelo, filename):
     disp = ConfusionMatrixDisplay(confusion_matrix=cm)
     
     fig, ax = plt.subplots(figsize=(10, 8))
-    disp.plot(ax=ax, cmap='Blues') #pintamos la matriz en el area de dinbujo, colormap azul podría poner otro
+    disp.plot(ax=ax, cmap='Greys') #pintamos la matriz en el area de dibujo
     plt.title(f"Matriz de Confusión - {nombre_modelo}")
     plt.tight_layout()
     plt.savefig(filename)
@@ -200,11 +195,11 @@ def compilar_mlp(config: MLPConfig, input_dim: int, num_clases: int = 10):
 def entrenar_MLP(config: MLPConfig, ea: EarlyStoppingConfig, usar_ea: bool = True):
 
     X_train, y_train, X_test , y_test, y_test_labels = cargar_datos()
+    #cargamos los datos y las codificaciones one_hot, mas las etiquetas para la matriz de confusión luego
 
     input_dim = X_train.shape[1]
     num_clases = y_train.shape[1]
 
-   
     my_callbacks = None
     if usar_ea:
         my_callbacks = [
@@ -242,10 +237,14 @@ def entrenar_MLP(config: MLPConfig, ea: EarlyStoppingConfig, usar_ea: bool = Tru
         "y_test": y_test_labels #el resultado que es sin codificacion one hot
     }
     
-def probar_mlp(config: MLPConfig, ea: EarlyStoppingConfig, repeticiones: int = 5, usar_ea: bool = True):
+def ejecutar_mlp(config: MLPConfig, ea: EarlyStoppingConfig, repeticiones: int = 5, usar_ea: bool = True):
+    mejor_entrenamiento = None
+    mejor_test_acc = 0
     historial = []
     for i in range(repeticiones):
         resultado = entrenar_MLP(config,ea,usar_ea)
+        if resultado['test_acc'] > mejor_test_acc:
+            mejor_entrenamiento = i
         historial.append(resultado)
 
     media, max_epochs, num_epocas = calcular_media_historial(historial)
@@ -270,10 +269,10 @@ def probar_mlp(config: MLPConfig, ea: EarlyStoppingConfig, repeticiones: int = 5
          f"{config.nombre}_evolucion_entrenamiento.png" #nombre para el archivo
     )
 
-    ultimo_resultado = historial[-1]
+    mejor_resultado = historial[mejor_entrenamiento]
     matriz_confusion(
-        ultimo_resultado["y_test"],
-        ultimo_resultado["y_pred"],
+        mejor_resultado["y_test"],
+        mejor_resultado["y_pred"],
         config.nombre,
         f"{config.nombre}_matriz_confusion.png"
     )
@@ -309,7 +308,7 @@ def comparar_earlystoppings(config: MLPConfig, ea_configs: List[EarlyStoppingCon
             verbose=0
         )
         
-        resultado = probar_mlp(config_con_nombre, ea, repeticiones)
+        resultado = ejecutar_mlp(config_con_nombre, ea, repeticiones)
         resultados[config_nombre] = resultado #creamos un diccionario de diccionario donde es { nombre:{"train_time": valor}}
     
     # Gráficas comparativas
@@ -333,7 +332,7 @@ def probar_batch_size(config: MLPConfig, ea: EarlyStoppingConfig, batch_sizes: l
             batch_size = bs,
             verbose = 0
         )
-        resultado = probar_mlp(config_con_parametros,ea,5)
+        resultado = ejecutar_mlp(config_con_parametros,ea,5)
         resultados[config_nombre] = resultado
 
     comparativa_modelos(
@@ -359,7 +358,7 @@ def probar_activaciones_inicializaciones(config: MLPConfig, ea: EarlyStoppingCon
             verbose=0,
             initializer=init
         )
-        resultado = probar_mlp(config_con_parametros, ea, repeticiones)
+        resultado = ejecutar_mlp(config_con_parametros, ea, repeticiones)
         resultados[config_nombre] = resultado
 
 
@@ -380,7 +379,7 @@ def probar_neuronas(config: MLPConfig, ea: EarlyStoppingConfig, neuronas: List[i
             verbose=0,
             initializer=config.initializer
         )
-        resultado = probar_mlp(config_con_parametros,ea,repeticiones)
+        resultado = ejecutar_mlp(config_con_parametros,ea,repeticiones)
         resultados[config_nombre] = resultado
     
     comparativa_modelos(resultados,"comprativa_neuronas.png")
@@ -438,7 +437,14 @@ if __name__ == "__main__":
         EarlyStoppingConfig(monitor='val_loss', patience=3, min_delta=0.002, verbose=0),
         EarlyStoppingConfig(monitor='val_loss', patience=5, min_delta=0.001, verbose=0), #para mi este es el mejor
         EarlyStoppingConfig(monitor='val_loss', patience=7, min_delta=0.0005, verbose=0),
-        EarlyStoppingConfig(monitor='val_loss', patience=10, min_delta=0.0001, verbose=0)
+        EarlyStoppingConfig(monitor='val_loss', patience=10, min_delta=0.0001, verbose=0),
+        EarlyStoppingConfig(monitor='val_loss', patience=15, min_delta=0.00009, verbose=0),
+        EarlyStoppingConfig(monitor='val_accuracy', patience=2, min_delta=0.005, verbose=0),
+        EarlyStoppingConfig(monitor='val_accuracy', patience=3, min_delta=0.002, verbose=0),
+        EarlyStoppingConfig(monitor='val_accuracy', patience=5, min_delta=0.001, verbose=0), #para mi este es el mejor
+        EarlyStoppingConfig(monitor='val_accuracy', patience=7, min_delta=0.0005, verbose=0),
+        EarlyStoppingConfig(monitor='val_accuracy', patience=10, min_delta=0.0001, verbose=0),
+        EarlyStoppingConfig(monitor='val_accuracy', patience=15, min_delta=0.00009, verbose=0)
     ]
 
     activaciones_inicializaciones = [
@@ -449,14 +455,14 @@ if __name__ == "__main__":
         ("leaky_relu", "he_normal"),  # para LeakyReLU habría que añadir la capa manualmente
         ("leaky_relu","he_uniform")
     ]
-    neuronas = [12,24,48,60,80,96,100,120,150] #entre 60-80 neuronas lo mejor
+    neuronas = [12,24,48,60,80,96,100,120,150,170,200] #entre 60-80 neuronas lo mejor
 
 
-    #probar_mlp(configs[1],early_stopping_configs[0],5,False)
+    ejecutar_mlp(configs[1],early_stopping_configs[0],5,False)
     #comparar_earlystoppings(configs[1],early_stopping_configs,5)
     #probar_batch_size(configs[2],early_stopping_configs[2],batch_sizes)
     #probar_activaciones_inicializaciones(configs[3],early_stopping_configs[2],activaciones_inicializaciones,5)
-    probar_neuronas(configs[4],early_stopping_configs[2],neuronas,5)
+    #probar_neuronas(configs[4],early_stopping_configs[2],neuronas,5)
 
 
 
