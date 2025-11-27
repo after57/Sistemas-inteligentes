@@ -95,7 +95,7 @@ def calcular_media_historial(historial):
 def comparativa_modelos(resultados, filename):
  
     nombres = list(resultados.keys()) #recordemos resultados es un diccionario de diccionarios, a cada nombre esta el train,history y test_acc
-    accs = [resultados[n]["test_acc"] for n in nombres]
+    accuracys = [resultados[n]["test_acc"] for n in nombres]
     tiempos = [resultados[n]["train_time"] for n in nombres]
     
     fig, ax1 = plt.subplots(figsize=(14, 7)) #tamaño de la imagen
@@ -104,14 +104,16 @@ def comparativa_modelos(resultados, filename):
     width = 0.35 #el ancho de cada barra, una dede x-width/2 hasta x+width/2
     
     #eje izquierdo: Accuracy
-    bars1 = ax1.bar(x - width/2, accs, width, alpha=0.8, color='steelblue', label='Test Accuracy')
+    bars1 = ax1.bar(x - width/2, accuracys, width, alpha=0.8, color='steelblue', label='Test Accuracy')
     ax1.set_xlabel("Modelo", fontsize=11, fontweight='bold')
     ax1.set_ylabel("Test Accuracy", fontsize=11, fontweight='bold', color='steelblue')
-    ax1.set_ylim([0, 1]) #de 0 a 1
+
+    acc_min, acc_max = min(accuracys), max(accuracys)
+    ax1.set_ylim([acc_min - 0.05 * (acc_max-acc_min), acc_max + 0.05 * (acc_max-acc_min)])
     #ax1.tick_params(axis='y', labelcolor='steelblue')
     #ax1.grid(True, alpha=0.3, axis='y')
     
-    for bar, acc in zip(bars1, accs): #añadimos los valores encima de cada barra
+    for bar, acc in zip(bars1, accuracys): #añadimos los valores encima de cada barra
         height = bar.get_height() #a que altura termina la barra
         ax1.text(bar.get_x() + bar.get_width()/2., height, #corrdenadas del texto
                 f'{acc:.4f}', ha='center', va='bottom', fontsize=9, color='steelblue', fontweight='bold')
@@ -121,6 +123,8 @@ def comparativa_modelos(resultados, filename):
     bars2 = ax2.bar(x + width/2, tiempos, width, alpha=0.8, color='orange', label='Tiempo (s)')
     ax2.set_ylabel("Tiempo (segundos)", fontsize=11, fontweight='bold', color='orange')
     ax2.tick_params(axis='y', labelcolor='orange')
+    min_tiempo, max_tiempo = min(tiempos) , max(tiempos)
+    ax2.set_ylim([min_tiempo - 0.05 * (max_tiempo-min_tiempo), max_tiempo + 0.005 * (max_tiempo - min_tiempo)])
     
     for bar, t in zip(bars2, tiempos): #añadimos los valores encima de cada barra
         height = bar.get_height()
@@ -142,20 +146,52 @@ def comparativa_modelos(resultados, filename):
     plt.close()
     print(f"Gráfica comparativa guardada: {filename}")
 
-def plottear_graficas(x, y_list, labels, title, filename):
-    plt.figure(figsize=(10, 6)) #definimos fig_size
 
-    for y, label in zip(y_list, labels): #cada valor y va asociado a la etiqueta de que estamos plotteando, x siempre son las épocas
-        plt.plot(x, y, label=label, marker='o')
+def plottear_graficas(x, y_list, labels, title, filename):
+    """
+    Parámetros:
+    - x: lista de épocas
+    - y_list: [train_acc, train_loss, val_acc, val_loss]
+    - labels: ["Train Acc", "Train Loss", "Val Acc", "Val Loss"]
+    """
+    plt.figure(figsize=(10, 6))  # definimos fig_size
     
+    # Primer eje (izquierda) -> accuracies
+    ax1 = plt.gca()
+    ax1.plot(x, y_list[0], label=labels[0], marker='o', color='b')
+    ax1.plot(x, y_list[2], label=labels[2], marker='o', color='g')
+    ax1.set_xlabel("Época")
+    ax1.set_ylabel("Accuracy", color='k')
+    ax1.tick_params(axis='y', labelcolor='k')
+
+    acc_values = np.concatenate((y_list[0],y_list[2]))
+    acc_min, acc_max = min(acc_values), max(acc_values)
+    ax1.set_ylim([acc_min - 0.05 * (acc_max-acc_min), acc_max + 0.005 * (acc_max-acc_min)])
+    
+    # Segundo eje (derecha) -> losses
+    ax2 = ax1.twinx()
+    ax2.plot(x, y_list[1], label=labels[1], marker='o', color='r')
+    ax2.plot(x, y_list[3], label=labels[3], marker='o', color='orange')
+    ax2.set_ylabel("Loss", color='k')
+    ax2.tick_params(axis='y', labelcolor='k')
+
+    loss_values = np.concatenate((y_list[1], y_list[3]))
+    loss_min, loss_max = min(loss_values), max(loss_values)
+    ax2.set_ylim([loss_min - 0.05 * (loss_max-loss_min), loss_max + 0.05 * (loss_max-loss_min)])
+    
+    # Título
     plt.title(title)
-    plt.xlabel("Época")
-    plt.ylabel("Valor")
-    plt.legend()
-    plt.tight_layout() #para que se ajuste el padding y no se colapsen las imagenes
+    
+    # Leyenda combinada
+    lines_1, labels_1 = ax1.get_legend_handles_labels()
+    lines_2, labels_2 = ax2.get_legend_handles_labels()
+    plt.legend(lines_1 + lines_2, labels_1 + labels_2, loc="best")
+    
+    plt.tight_layout()
     plt.savefig(filename)
     plt.close()
     print(f"Gráfica guardada: {filename}")
+
 
 def matriz_confusion(y_test, y_pred, nombre_modelo, filename):
     cm = confusion_matrix(y_test, y_pred) #valor real y prediccion
@@ -297,7 +333,7 @@ def comparar_earlystoppings(config: MLPConfig, ea_configs: List[EarlyStoppingCon
     print("Compracion earlystoppings")
     
     for ea in ea_configs:
-        config_nombre = f"pat_{ea.patience}_delta_{ea.min_delta}"
+        config_nombre = f"{ea.monitor}_pat_{ea.patience}_delta_{ea.min_delta}"
         print(f"Probando earlyStopping {config_nombre}")
         config_con_nombre = MLPConfig( #mismo modelo pero el nombre acompañado del early_stopping
             nombre=f"{config.nombre}_{config_nombre}",
@@ -386,7 +422,7 @@ def probar_neuronas(config: MLPConfig, ea: EarlyStoppingConfig, neuronas: List[i
 
 if __name__ == "__main__":
     
-    batch_sizes = [16,32,64,128,256,512,1024,2048] #batch_sizes a probar
+    batch_sizes = [16,32,64,100,128,200,256,300,512,1024,2048] #batch_sizes a probar
     #mejor batch_size 256
     configs = [
         MLPConfig( #mlp 1
@@ -405,29 +441,29 @@ if __name__ == "__main__":
             batch_size=32,
             verbose=0
         ),
-        MLPConfig( #mlp 3, usamos el callback 2 mejor callback obetenido hasta ahora, muchas epocas
+        MLPConfig( #mlp 3, usamos el callback 9 mejor callback obetenido hasta ahora, muchas epocas
             nombre="mlp3",
             capas=[48],        
             activation="sigmoid",
             epochs=200,
-            batch_size=256, #el mejor segun las pruebas
+            batch_size=200, #el mejor segun las pruebas
             verbose=0
         ),
-        MLPConfig( #mlp 4, usamos el callback 2 mejor callback obetenido hasta ahora, muchas epocas
+        MLPConfig( #mlp 4, usamos el callback 9 mejor callback obetenido hasta ahora, muchas epocas
             nombre="mlp4",
             capas=[48],        
             activation="sigmoid",
             epochs=200,
-            batch_size=256, #el mejor segun las pruebas
+            batch_size=200, #el mejor segun las pruebas
             verbose=0,
             initializer= "glorot_uniform"
         ),
-        MLPConfig( #mlp 5, usamos el callback 2 mejor callback obetenido hasta ahora, muchas epocas
+        MLPConfig( #mlp 5, usamos el callback 9 mejor callback obetenido hasta ahora, muchas epocas
             nombre="mlp5",
             capas=[48],        
             activation="sigmoid",
             epochs=200,
-            batch_size=256, #el mejor segun las pruebas
+            batch_size=200, #el mejor segun las pruebas
             verbose=0,
             initializer= "glorot_uniform"
         )
@@ -435,14 +471,14 @@ if __name__ == "__main__":
     early_stopping_configs = [ #earlystoppings a probar, grafica ya generada
         EarlyStoppingConfig(monitor='val_loss', patience=2, min_delta=0.005, verbose=0),
         EarlyStoppingConfig(monitor='val_loss', patience=3, min_delta=0.002, verbose=0),
-        EarlyStoppingConfig(monitor='val_loss', patience=5, min_delta=0.001, verbose=0), #para mi este es el mejor
+        EarlyStoppingConfig(monitor='val_loss', patience=5, min_delta=0.001, verbose=0), 
         EarlyStoppingConfig(monitor='val_loss', patience=7, min_delta=0.0005, verbose=0),
         EarlyStoppingConfig(monitor='val_loss', patience=10, min_delta=0.0001, verbose=0),
         EarlyStoppingConfig(monitor='val_loss', patience=15, min_delta=0.00009, verbose=0),
         EarlyStoppingConfig(monitor='val_accuracy', patience=2, min_delta=0.005, verbose=0),
         EarlyStoppingConfig(monitor='val_accuracy', patience=3, min_delta=0.002, verbose=0),
-        EarlyStoppingConfig(monitor='val_accuracy', patience=5, min_delta=0.001, verbose=0), #para mi este es el mejor
-        EarlyStoppingConfig(monitor='val_accuracy', patience=7, min_delta=0.0005, verbose=0),
+        EarlyStoppingConfig(monitor='val_accuracy', patience=5, min_delta=0.001, verbose=0), 
+        EarlyStoppingConfig(monitor='val_accuracy', patience=7, min_delta=0.0005, verbose=0),#para mi este es el mejor
         EarlyStoppingConfig(monitor='val_accuracy', patience=10, min_delta=0.0001, verbose=0),
         EarlyStoppingConfig(monitor='val_accuracy', patience=15, min_delta=0.00009, verbose=0)
     ]
@@ -458,11 +494,11 @@ if __name__ == "__main__":
     neuronas = [12,24,48,60,80,96,100,120,150,170,200] #entre 60-80 neuronas lo mejor
 
 
-    ejecutar_mlp(configs[1],early_stopping_configs[0],5,False)
+    #ejecutar_mlp(configs[1],early_stopping_configs[0],5,False)
     #comparar_earlystoppings(configs[1],early_stopping_configs,5)
-    #probar_batch_size(configs[2],early_stopping_configs[2],batch_sizes)
-    #probar_activaciones_inicializaciones(configs[3],early_stopping_configs[2],activaciones_inicializaciones,5)
-    #probar_neuronas(configs[4],early_stopping_configs[2],neuronas,5)
+    #probar_batch_size(configs[2],early_stopping_configs[9],batch_sizes)
+    probar_activaciones_inicializaciones(configs[3],early_stopping_configs[9],activaciones_inicializaciones,5)
+    #probar_neuronas(configs[4],early_stopping_configs[9],neuronas,5)
 
 
 
