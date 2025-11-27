@@ -214,7 +214,7 @@ def compilar_mlp(config: MLPConfig, input_dim: int, num_clases: int = 10):
     for units in config.capas:
         if config.activation == "leaky_relu":
             model.add(layers.Dense(units, kernel_initializer=config.initializer))
-            model.add(layers.LeakyReLU(alpha=0.1))
+            model.add(layers.LeakyReLU(negative_slope=0.1))
         else:
             model.add(layers.Dense(units, activation=config.activation, kernel_initializer=config.initializer))
 
@@ -420,6 +420,28 @@ def probar_neuronas(config: MLPConfig, ea: EarlyStoppingConfig, neuronas: List[i
     
     comparativa_modelos(resultados,"comprativa_neuronas.png")
 
+def probar_capas(config: MLPConfig, ea:EarlyStoppingConfig, neuronas: List[List[int]], repeticiones: int = 5):
+    resultados = {}
+    for capas in neuronas:
+        nombre = str(capas)
+        nombre = nombre.replace('[','').replace(']','').replace(',','_').replace(' ','')
+        config_nombre = f"capas_{nombre}"
+        print(f"Probando capas {capas}")
+        config_con_parametros = MLPConfig(
+            nombre = f"{config.nombre}_{config_nombre}",
+            capas = [n for n in capas],
+            activation = config.activation,
+            epochs = config.epochs,
+            batch_size = config.batch_size,
+            verbose = 0,
+            initializer = config.initializer
+        )
+        resultado = ejecutar_mlp(config_con_parametros,ea,repeticiones)
+        resultados[config_nombre] = resultado
+
+    comparativa_modelos(resultados,"comprativa_neuronas.png")
+
+
 if __name__ == "__main__":
     
     batch_sizes = [16,32,64,100,128,200,256,300,512,1024,2048] #batch_sizes a probar
@@ -452,20 +474,29 @@ if __name__ == "__main__":
         MLPConfig( #mlp 4, usamos el callback 9 mejor callback obetenido hasta ahora, muchas epocas
             nombre="mlp4",
             capas=[48],        
-            activation="sigmoid",
+            activation="leaky_relu",
             epochs=200,
             batch_size=200, #el mejor segun las pruebas
             verbose=0,
-            initializer= "glorot_uniform"
+            initializer= "he_normal"
         ),
         MLPConfig( #mlp 5, usamos el callback 9 mejor callback obetenido hasta ahora, muchas epocas
             nombre="mlp5",
-            capas=[48],        
-            activation="sigmoid",
+            capas=[80],        
+            activation="leaky_relu",
             epochs=200,
             batch_size=200, #el mejor segun las pruebas
             verbose=0,
-            initializer= "glorot_uniform"
+            initializer= "he_normal"
+        ),
+        MLPConfig( #mlp 6, usamos el callback 9 mejor callback obetenido hasta ahora, muchas epocas
+            nombre="mlp5",
+            capas=[80],        
+            activation="leaky_relu",
+            epochs=200,
+            batch_size=200, #el mejor segun las pruebas
+            verbose=0,
+            initializer= "he_normal"
         )
     ]
     early_stopping_configs = [ #earlystoppings a probar, grafica ya generada
@@ -493,12 +524,41 @@ if __name__ == "__main__":
     ]
     neuronas = [12,24,48,60,80,96,100,120,150,170,200] #entre 60-80 neuronas lo mejor
 
+    capas = [
+    #uniformes
+    [80],
+    [40, 40],
+    [27, 27, 26],
+    [20, 20, 20, 20],
+    [16, 16, 16, 16, 16],
+    
+    #decrecientes 
+    [50, 30],
+    [60, 20],
+    [40, 30, 10],
+    [50, 20, 10],
+    [30, 25, 15, 10],
+    
+    #crecientes 
+    [10, 70],
+    [10, 30, 40],
+    [20, 30, 30],
+    [10, 20, 25, 25],
+    
+    #cuello de botella 
+    [40, 20, 40],
+    [30, 15, 35],
+    [35, 10, 35],
+    [30, 20, 15, 15],
+]
+
 
     #ejecutar_mlp(configs[1],early_stopping_configs[0],5,False)
     #comparar_earlystoppings(configs[1],early_stopping_configs,5)
     #probar_batch_size(configs[2],early_stopping_configs[9],batch_sizes)
-    probar_activaciones_inicializaciones(configs[3],early_stopping_configs[9],activaciones_inicializaciones,5)
+    #probar_activaciones_inicializaciones(configs[3],early_stopping_configs[9],activaciones_inicializaciones,5)
     #probar_neuronas(configs[4],early_stopping_configs[9],neuronas,5)
+    probar_capas(configs[5],early_stopping_configs[9],capas,5)
 
 
 
