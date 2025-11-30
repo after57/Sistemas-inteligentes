@@ -34,33 +34,59 @@ class MLPConfig:
 @dataclass #dataclass para los distintos earlyStops
 class EarlyStoppingConfig:
     monitor: str = 'val_loss'
-    patience: int = 10
+    paciencia: int = 10
     restore_weights: bool = True
     min_delta: float = 0.001
     verbose: int = 1
 
+class MejorasConfig:        
+    dropout: float = 0.0       # 0 = sin Dropout
+    use_batchnorm: bool = False     # BatchNormalization
+
 _datos_cacheados = None
 
-def cargar_datos():
+def cargar_datos(mejora: bool = False):
     global _datos_cacheados
     
-    if _datos_cacheados is not None:
+    if _datos_cacheados is not None and not mejora:
         return _datos_cacheados
     
     (X_train, y_train), (X_test, y_test) = keras.datasets.cifar10.load_data()
    
     #shape es (50000, 32, 32, 3) -> (50000, 3072), normalizando píxeles a [0, 1]
-    X_train = X_train.reshape((X_train.shape[0], -1)).astype("float32") / 255.0
-    X_test  = X_test.reshape((X_test.shape[0], -1)).astype("float32") / 255.0
-
+    if not mejora:
+        X_train = X_train.reshape((X_train.shape[0], -1)).astype("float32") / 255.0
+        X_test  = X_test.reshape((X_test.shape[0], -1)).astype("float32") / 255.0
+    else:
+        X_train = X_train.astype("float32") / 255.0
+        X_test = X_test.astype("float32") / 255.0
+    
     num_clases = 10
     #cada etiqueta pasa a vector de 10 posiciones (one-hot encoding)
     y_train_cat = to_categorical(y_train, num_clases)
     y_test_cat  = to_categorical(y_test, num_clases)
 
-    _datos_cacheados = (X_train, y_train_cat, X_test, y_test_cat, y_test)
+    if mejora:
+        data_augmentation = keras.Sequential([
+            layers.RandomFlip("horizontal"),
+            layers.RandomRotation(0.1),
+            layers.RandomZoom(0.1),
+            layers.RandomTranslation(0.1, 0.1),
+            layers.RandomBrightness(factor=0.2)
+        ])
 
+        X_train_augmented = []
+        for img in X_train:
+            aug_img = data_augmentation(img[np.newaxis, ...], training=True)[0]
+            X_train_augmented.append(aug_img)
+        X_train_augmented = np.array(X_train_augmented)
+        X_train_flat = X_train_augmented.reshape((X_train_augmented.shape[0], -1))
+        X_test_flat = X_test.reshape((X_test.shape[0], -1))
+        return X_train_flat, y_train_cat, X_test_flat, y_test_cat, y_test
+
+    _datos_cacheados = (X_train, y_train_cat, X_test, y_test_cat, y_test)
     return _datos_cacheados
+
 
 def calcular_media_historial(historial):
 
@@ -148,15 +174,10 @@ def comparativa_modelos(resultados, filename):
 
 
 def plottear_graficas(x, y_list, labels, title, filename):
-    """
-    Parámetros:
-    - x: lista de épocas
-    - y_list: [train_acc, train_loss, val_acc, val_loss]
-    - labels: ["Train Acc", "Train Loss", "Val Acc", "Val Loss"]
-    """
+
     plt.figure(figsize=(10, 6))  # definimos fig_size
     
-    # Primer eje (izquierda) -> accuracies
+    #primer eje (izquierda
     ax1 = plt.gca()
     ax1.plot(x, y_list[0], label=labels[0], marker='o', color='b')
     ax1.plot(x, y_list[2], label=labels[2], marker='o', color='g')
@@ -168,7 +189,7 @@ def plottear_graficas(x, y_list, labels, title, filename):
     acc_min, acc_max = min(acc_values), max(acc_values)
     ax1.set_ylim([acc_min - 0.05 * (acc_max-acc_min), acc_max + 0.005 * (acc_max-acc_min)])
     
-    # Segundo eje (derecha) -> losses
+    #segundo eje de dibujo
     ax2 = ax1.twinx()
     ax2.plot(x, y_list[1], label=labels[1], marker='o', color='r')
     ax2.plot(x, y_list[3], label=labels[3], marker='o', color='orange')
@@ -179,10 +200,9 @@ def plottear_graficas(x, y_list, labels, title, filename):
     loss_min, loss_max = min(loss_values), max(loss_values)
     ax2.set_ylim([loss_min - 0.05 * (loss_max-loss_min), loss_max + 0.05 * (loss_max-loss_min)])
     
-    # Título
+    #título
     plt.title(title)
     
-    # Leyenda combinada
     lines_1, labels_1 = ax1.get_legend_handles_labels()
     lines_2, labels_2 = ax2.get_legend_handles_labels()
     plt.legend(lines_1 + lines_2, labels_1 + labels_2, loc="best")
@@ -205,20 +225,36 @@ def matriz_confusion(y_test, y_pred, nombre_modelo, filename):
     plt.close()
     print(f"Matriz de confusión guardada: {filename}")
 
-def compilar_mlp(config: MLPConfig, input_dim: int, num_clases: int = 10):
+def compilar_mlp(config: MLPConfig, input_dim: int, num_clases: int = 10, mejora: MejorasConfig = None):
+
     model = models.Sequential(name=config.nombre)
-    
     model.add(layers.Input(shape=(input_dim,)))
 
-    #capas
-    for units in config.capas:
+    # Si no hay mejoras, usar configuración básica
+    if mejoras is None:
+        mejoras = MejorasConfig()
+    
+
+    for i, neuronas in enumerate(config.capas):
+
+        model.add(layers.Dense(
+            neuronas, 
+            kernel_initializer=config.initializer
+        ))
+        
+        if mejoras.use_batchnorm:
+            model.add(layers.BatchNormalization())
+        
+        #leakyRelu tiene que añadir su propia capa
         if config.activation == "leaky_relu":
-            model.add(layers.Dense(units, kernel_initializer=config.initializer))
             model.add(layers.LeakyReLU(negative_slope=0.1))
         else:
-            model.add(layers.Dense(units, activation=config.activation, kernel_initializer=config.initializer))
+            model.add(layers.Activation(config.activation))
+        
+        #dropout, si esta especificado
+        if mejoras.dropout > 0 and i < len(config.capas) - 1: #la ultima capa no se pueden apagar neuronas porque no habría resultado
+            model.add(layers.Dropout(mejoras.dropout_rate))
 
-    #capa de salida: num_clases neuronas con softmax
     model.add(layers.Dense(num_clases, activation="softmax"))
 
     model.compile(
@@ -439,7 +475,7 @@ def probar_capas(config: MLPConfig, ea:EarlyStoppingConfig, neuronas: List[List[
         resultado = ejecutar_mlp(config_con_parametros,ea,repeticiones)
         resultados[config_nombre] = resultado
 
-    comparativa_modelos(resultados,"comprativa_neuronas.png")
+    comparativa_modelos(resultados,"comprativa_capas.png")
 
 
 if __name__ == "__main__":
@@ -474,7 +510,7 @@ if __name__ == "__main__":
         MLPConfig( #mlp 4, usamos el callback 9 mejor callback obetenido hasta ahora, muchas epocas
             nombre="mlp4",
             capas=[48],        
-            activation="leaky_relu",
+            activation="leaky_relu", #mejor resultado leaky_relu con he_normal
             epochs=200,
             batch_size=200, #el mejor segun las pruebas
             verbose=0,
@@ -482,7 +518,7 @@ if __name__ == "__main__":
         ),
         MLPConfig( #mlp 5, usamos el callback 9 mejor callback obetenido hasta ahora, muchas epocas
             nombre="mlp5",
-            capas=[80],        
+            capas=[80],   #mejor relación resultado-tiempo     
             activation="leaky_relu",
             epochs=200,
             batch_size=200, #el mejor segun las pruebas
@@ -490,8 +526,8 @@ if __name__ == "__main__":
             initializer= "he_normal"
         ),
         MLPConfig( #mlp 6, usamos el callback 9 mejor callback obetenido hasta ahora, muchas epocas
-            nombre="mlp5",
-            capas=[80],        
+            nombre="mlp6",
+            capas=[80], #mejor configuracion las 80 neuronas en una capa, al menos por ahora        
             activation="leaky_relu",
             epochs=200,
             batch_size=200, #el mejor segun las pruebas
@@ -500,18 +536,18 @@ if __name__ == "__main__":
         )
     ]
     early_stopping_configs = [ #earlystoppings a probar, grafica ya generada
-        EarlyStoppingConfig(monitor='val_loss', patience=2, min_delta=0.005, verbose=0),
-        EarlyStoppingConfig(monitor='val_loss', patience=3, min_delta=0.002, verbose=0),
-        EarlyStoppingConfig(monitor='val_loss', patience=5, min_delta=0.001, verbose=0), 
-        EarlyStoppingConfig(monitor='val_loss', patience=7, min_delta=0.0005, verbose=0),
-        EarlyStoppingConfig(monitor='val_loss', patience=10, min_delta=0.0001, verbose=0),
-        EarlyStoppingConfig(monitor='val_loss', patience=15, min_delta=0.00009, verbose=0),
-        EarlyStoppingConfig(monitor='val_accuracy', patience=2, min_delta=0.005, verbose=0),
-        EarlyStoppingConfig(monitor='val_accuracy', patience=3, min_delta=0.002, verbose=0),
-        EarlyStoppingConfig(monitor='val_accuracy', patience=5, min_delta=0.001, verbose=0), 
-        EarlyStoppingConfig(monitor='val_accuracy', patience=7, min_delta=0.0005, verbose=0),#para mi este es el mejor
-        EarlyStoppingConfig(monitor='val_accuracy', patience=10, min_delta=0.0001, verbose=0),
-        EarlyStoppingConfig(monitor='val_accuracy', patience=15, min_delta=0.00009, verbose=0)
+        EarlyStoppingConfig(monitor='val_loss', paciencia=2, min_delta=0.005, verbose=0),
+        EarlyStoppingConfig(monitor='val_loss', paciencia=3, min_delta=0.002, verbose=0),
+        EarlyStoppingConfig(monitor='val_loss', paciencia=5, min_delta=0.001, verbose=0), 
+        EarlyStoppingConfig(monitor='val_loss', paciencia=7, min_delta=0.0005, verbose=0),
+        EarlyStoppingConfig(monitor='val_loss', paciencia=10, min_delta=0.0001, verbose=0),
+        EarlyStoppingConfig(monitor='val_loss', paciencia=15, min_delta=0.00009, verbose=0),
+        EarlyStoppingConfig(monitor='val_accuracy', paciencia=2, min_delta=0.005, verbose=0),
+        EarlyStoppingConfig(monitor='val_accuracy', paciencia=3, min_delta=0.002, verbose=0),
+        EarlyStoppingConfig(monitor='val_accuracy', paciencia=5, min_delta=0.001, verbose=0), 
+        EarlyStoppingConfig(monitor='val_accuracy', paciencia=7, min_delta=0.0005, verbose=0),#para mi este es el mejor
+        EarlyStoppingConfig(monitor='val_accuracy', paciencia=10, min_delta=0.0001, verbose=0),
+        EarlyStoppingConfig(monitor='val_accuracy', paciencia=15, min_delta=0.00009, verbose=0)
     ]
 
     activaciones_inicializaciones = [
@@ -551,14 +587,16 @@ if __name__ == "__main__":
     [35, 10, 35],
     [30, 20, 15, 15],
 ]
-
-
+    #ejecutar_mlp(configs[0],early_stopping_configs[9],5,False)
     #ejecutar_mlp(configs[1],early_stopping_configs[0],5,False)
     #comparar_earlystoppings(configs[1],early_stopping_configs,5)
     #probar_batch_size(configs[2],early_stopping_configs[9],batch_sizes)
     #probar_activaciones_inicializaciones(configs[3],early_stopping_configs[9],activaciones_inicializaciones,5)
     #probar_neuronas(configs[4],early_stopping_configs[9],neuronas,5)
-    probar_capas(configs[5],early_stopping_configs[9],capas,5)
+    #probar_capas(configs[5],early_stopping_configs[9],capas,5)
+    
+
+
 
 
 

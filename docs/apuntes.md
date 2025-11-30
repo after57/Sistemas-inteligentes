@@ -5,3 +5,9 @@ Mejor epoca mlp2 es 10 puesto que el callback de media para ahi en 5 ejecuciones
 
 Para mi mlp2 lo que mejor me ha ido ha sido con early-stopping val loss y 5 epocas de paciencia,
 cuando deja de mejorar restaura los mejores pesos de las 5 epocas que ese monitorean
+
+
+Referencia: https://www.google.com/search?q=best+activation+layers+for+hidden+layers+mlps&oq=best+activation+layers+for+hidden+layers+mlps&gs_lcrp=EgRlZGdlKgYIABBFGDkyBggAEEUYOTIHCAEQABjvBTIKCAIQABiABBiiBDIHCAMQABjvBTIHCAQQABjvBTIHCAUQABjvBdIBCDg1NzhqMGoxqAIAsAIA&sourceid=chrome&ie=UTF-8
+
+https://medium.datadriveninvestor.com/deep-learning-best-practices-activation-functions-weight-initialization-methods-part-1-c235ff976ed
+https://blog.paperspace.com/the-absolute-guide-to-keras/
