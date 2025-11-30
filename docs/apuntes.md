@@ -11,3 +11,5 @@ Referencia: https://www.google.com/search?q=best+activation+layers+for+hidden+la
 
 https://medium.datadriveninvestor.com/deep-learning-best-practices-activation-functions-weight-initialization-methods-part-1-c235ff976ed
 https://blog.paperspace.com/the-absolute-guide-to-keras/
+https://medium.com/data-science/data-augmentation-and-handling-huge-datasets-with-keras-a-simple-way-240481069376
+https://www.analyticsvidhya.com/blog/2020/08/image-augmentation-on-the-fly-using-keras-imagedatagenerator/
