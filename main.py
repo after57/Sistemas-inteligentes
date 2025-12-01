@@ -405,7 +405,7 @@ def comparar_earlystoppings(config: MLPConfig, ea_configs: List[EarlyStoppingCon
     print("Compracion earlystoppings")
     
     for ea in ea_configs:
-        config_nombre = f"{ea.monitor}_pat_{ea.patience}_delta_{ea.min_delta}"
+        config_nombre = f"{ea.monitor}_pat_{ea.paciencia}_delta_{ea.min_delta}"
         print(f"Probando earlyStopping {config_nombre}")
         config_con_nombre = MLPConfig( #mismo modelo pero el nombre acompañado del early_stopping
             nombre=f"{config.nombre}_{config_nombre}",
@@ -658,7 +658,7 @@ if __name__ == "__main__":
         [50, 30],
         [60, 20],
         [40, 30, 10],
-        [50, 20, 10],
+        
         [30, 25, 15, 10],
         
         #crecientes 
@@ -675,36 +675,38 @@ if __name__ == "__main__":
     ]
 
     activaciones_inicializaciones_mlp7 = [ #las que voy a probar en el mlp7
-        ("leaky_relu", "he_normal"), #la mejor hasta ahora
+        #("leaky_relu", "he_normal"), #la mejor hasta ahora
         ("relu", "he_normal"), #dio mal resultado pero por volver a probar
         #sigmoid no la pruebo porque todos los artículos no la recomiendan para mlps sino para las recurrentes
     ]
 
     mejores_capas = [
-        [80],
-        [60, 20],
-        [50, 30],
-        [40,40],
-        [100], #añadidas nuevas con 100 neuronas por probar, aunque mis mejores resultados han sido los de arriba
-        [60,40],
-        [40,30,20,10],
-        [30,30,10,10,10,10]
+        [300,200,100,50,50],
+        #[80],
+        #[500],
+        #[60, 20],
+        #[50, 30],
+        #[40,40],
+        #[100], #añadidas nuevas con 100 neuronas por probar, aunque mis mejores resultados han sido los de arriba
+        #[60,40],
+        #[40,30,20,10],
+        #[30,30,10,10,10,10]
     ]
 
     mejoras_mlp7 = [
         #sin aumento de data
-        MejorasConfig(dropout=0.0, use_batchnorm=False, usar_augmented_data=False, descripcion="Baseline"),
-        MejorasConfig(dropout=0.1, use_batchnorm=False, usar_augmented_data=False, descripcion="Dropout_0.1_noAug"),
-        MejorasConfig(dropout=0.2, use_batchnorm=False, usar_augmented_data=False, descripcion="Dropout_0.2_noAug"),
-        MejorasConfig(dropout=0.0, use_batchnorm=True, usar_augmented_data=False, descripcion="BatchNorm_noAug"),
-        MejorasConfig(dropout=0.1, use_batchnorm=True, usar_augmented_data=False, descripcion="Dropout_0.1+BatchNorm_noAug"),
+        #MejorasConfig(dropout=0.0, use_batchnorm=False, usar_augmented_data=False, descripcion="Baseline"),
+        #MejorasConfig(dropout=0.1, use_batchnorm=False, usar_augmented_data=False, descripcion="Dropout_0.1_noAug"),
+        #MejorasConfig(dropout=0.2, use_batchnorm=False, usar_augmented_data=False, descripcion="Dropout_0.2_noAug"),
+        #MejorasConfig(dropout=0.0, use_batchnorm=True, usar_augmented_data=False, descripcion="BatchNorm_noAug"),
+        #MejorasConfig(dropout=0.1, use_batchnorm=True, usar_augmented_data=False, descripcion="Dropout_0.1+BatchNorm_noAug"),
 
         #con aumento de dat
-        MejorasConfig(dropout=0.0, use_batchnorm=False, usar_augmented_data=True, descripcion="Baseline_Aug"),
-        MejorasConfig(dropout=0.1, use_batchnorm=False, usar_augmented_data=True, descripcion="Dropout_0.1_Aug"),
-        MejorasConfig(dropout=0.2, use_batchnorm=False, usar_augmented_data=True, descripcion="Dropout_0.2_Aug"),
-        MejorasConfig(dropout=0.0, use_batchnorm=True, usar_augmented_data=True, descripcion="BatchNorm_Aug"),
-        MejorasConfig(dropout=0.1, use_batchnorm=True, usar_augmented_data=True, descripcion="Dropout_0.1+BatchNorm_Aug"),
+        #MejorasConfig(dropout=0.0, use_batchnorm=False, usar_augmented_data=True, descripcion="Baseline_Aug"),
+        #MejorasConfig(dropout=0.1, use_batchnorm=False, usar_augmented_data=True, descripcion="Dropout_0.1_Aug"),
+        #MejorasConfig(dropout=0.2, use_batchnorm=False, usar_augmented_data=True, descripcion="Dropout_0.2_Aug"),
+        #MejorasConfig(dropout=0.0, use_batchnorm=True, usar_augmented_data=True, descripcion="BatchNorm_Aug"),
+        MejorasConfig(dropout=0.05, use_batchnorm=True, usar_augmented_data=True, descripcion="Dropout_0.05+BatchNorm_Aug"),
     ]
     #el augmentation on the fly añade mucho tiempo, realentiza todo mirar de probar otra vez cacheandolo
 
@@ -716,5 +718,6 @@ if __name__ == "__main__":
     #probar_activaciones_inicializaciones(configs[3],early_stopping_configs[9],activaciones_inicializaciones,5)
     #probar_neuronas(configs[4],early_stopping_configs[9],neuronas,5)
     #probar_capas(configs[5],early_stopping_configs[9],capas,5)
-    probar_mlp7_mejoras(configs[6], early_stopping_configs[9], mejoras_mlp7, mejores_capas, activaciones_inicializaciones_mlp7,5)
+    probar_mlp7_mejoras(configs[6], early_stopping_configs[9], mejoras_mlp7, mejores_capas, activaciones_inicializaciones_mlp7,1)
+    
     
