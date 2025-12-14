@@ -33,7 +33,18 @@ class MejorasConfig:
     use_batchnorm: bool = False     #batchNormalization
     usar_augmented_data: bool = False
     descripcion: str = None
-    
+
+@dataclass
+class CNNConfig:
+    nombre: str
+    bloques_conv: List[tuple]  # Lista de tuplas (num_filtros, kernel_size)
+    pool_size: tuple = (2, 2)
+    dense_units: int = 100
+    activation: str = "relu"
+    epochs: int = 100
+    batch_size: int = 32
+    verbose: int = 0
+    initializer: str = "he_normal"
 
 _datos_cacheados = None
 
@@ -554,6 +565,193 @@ def probar_mlp7_mejoras(
     
     return resultados_globales
 
+def cargar_datos_cnn():
+    """Carga datos para CNN manteniendo estructura espacial (sin aplanar)"""
+    (X_train, y_train), (X_test, y_test) = keras.datasets.cifar10.load_data()
+    X_train = X_train.astype("float32") / 255.0
+    X_test = X_test.astype("float32") / 255.0
+    y_train_cat = to_categorical(y_train, 10)
+    y_test_cat = to_categorical(y_test, 10)
+
+    return X_train,y_train_cat,X_test,y_test_cat,y_test
+
+def compilar_cnn(config: CNNConfig, input_shape: tuple = (32, 32, 3), num_clases: int = 10): #input shape en cifar 10 es 32x32x3
+    """Compila una CNN según la configuración especificada"""
+    
+    model = models.Sequential(name=config.nombre)
+    model.add(layers.Input(shape=input_shape))
+    
+    # Bloques convolucionales
+    for num_filtros, kernel_size in config.bloques_conv:
+        # Capa convolucional
+        model.add(layers.Conv2D(
+            num_filtros,
+            kernel_size=kernel_size,
+            activation=config.activation,
+            kernel_initializer=config.initializer,
+            padding='same'
+        ))
+        
+        # MaxPooling
+        model.add(layers.MaxPooling2D(pool_size=config.pool_size))
+    
+    # Aplanar para capas densas
+    model.add(layers.Flatten())
+    
+    # Capa densa oculta
+    model.add(layers.Dense(config.dense_units, activation=config.activation,
+                          kernel_initializer=config.initializer))
+    
+    # Capa de salida
+    model.add(layers.Dense(num_clases, activation="softmax"))
+    
+    model.compile(
+        optimizer="adam",
+        loss="categorical_crossentropy",
+        metrics=["accuracy"]
+    )
+    
+    return model
+
+def entrenar_CNN(config: CNNConfig, ea: EarlyStoppingConfig, usar_ea: bool = True):
+    """Entrena una CNN y devuelve métricas"""
+    
+    my_callbacks = []
+    if usar_ea:
+        my_callbacks.append(
+            keras.callbacks.EarlyStopping(
+                monitor=ea.monitor,
+                patience=ea.paciencia,
+                restore_best_weights=ea.restore_weights,
+                min_delta=ea.min_delta,
+                verbose=ea.verbose
+            )
+        )
+    
+    tf.keras.backend.clear_session()
+    
+    # Cargar datos sin aplanar
+    X_train, y_train, X_test, y_test, y_test_labels = cargar_datos_cnn()
+    
+    model = compilar_cnn(config)
+    
+    t0 = time.time()
+    history = model.fit(
+        X_train, y_train,
+        validation_split=0.1,
+        batch_size=config.batch_size,
+        epochs=config.epochs,
+        verbose=config.verbose,
+        callbacks=my_callbacks
+    )
+    train_time = time.time() - t0
+    
+    test_loss, test_acc = model.evaluate(X_test, y_test, verbose=config.verbose)
+    y_pred_probs = model.predict(X_test, verbose=0)
+    y_pred = np.argmax(y_pred_probs, axis=1)
+    
+    return {
+        "train_time": train_time,
+        "test_loss": test_loss,
+        "test_acc": test_acc,
+        "history": history.history,
+        "y_pred": y_pred,
+        "y_test": y_test_labels.flatten()
+    }
+
+def ejecutar_cnn(config: CNNConfig, ea: EarlyStoppingConfig, repeticiones: int = 5, 
+                 usar_ea: bool = True):
+    """Ejecuta múltiples entrenamientos de una CNN y calcula promedios"""
+    
+    mejor_entrenamiento = None
+    mejor_test_acc = 0
+    historial = []
+    
+    for i in range(repeticiones):
+        print(f"\nEntrenamiento {i+1}/{repeticiones}")
+        resultado = entrenar_CNN(config, ea, usar_ea)
+        if resultado['test_acc'] > mejor_test_acc:
+            mejor_test_acc = resultado['test_acc']
+            mejor_entrenamiento = i
+        historial.append(resultado)
+    
+    media, max_epochs, num_epocas = calcular_media_historial(historial)
+    
+    # Información de EarlyStopping
+    print(f"\nInformación de EarlyStopping")
+    print(f"Configuración: {config.nombre}")
+    for i, ep in enumerate(num_epocas):
+        print(f"Entrenamiento {i+1} paró en la época: {ep}")
+    print(f"Máximo de épocas alcanzado: {max_epochs}")
+    print(f"Promedio de épocas: {np.mean(num_epocas):.1f}")
+    
+    epochs_range = np.arange(1, max_epochs + 1)
+    
+    # Gráfica de evolución
+    plottear_graficas(
+        epochs_range,
+        [media["accuracy"], media["loss"], media["val_accuracy"], media["val_loss"]],
+        ["Train accuracy", "Train loss", "Val accuracy", "Val loss"],
+        "Evolución entrenamiento CNN",
+        f"{config.nombre}_evolucion_entrenamiento.png"
+    )
+    
+    # Matriz de confusión del mejor entrenamiento
+    mejor_resultado = historial[mejor_entrenamiento]
+    matriz_confusion(
+        mejor_resultado["y_test"],
+        mejor_resultado["y_pred"],
+        config.nombre,
+        f"{config.nombre}_matriz_confusion.png"
+    )
+    
+    # Resultados finales
+    print(f"\nResultados finales de {config.nombre}")
+    print(f"Tiempo de entrenamiento (media): {media['train_time']:.2f}s")
+    print(f"Test Accuracy (media): {media['test_acc']:.4f}")
+    print(f"Test Loss (media): {media['test_loss']:.4f}")
+    print(f"Val Accuracy final (media): {media['val_accuracy'][-1]:.4f}")
+    print(f"Val Loss final (media): {media['val_loss'][-1]:.4f}", '\n')
+    
+    return {
+        "test_acc": media['test_acc'],
+        "test_loss": media['test_loss'],
+        "train_time": media['train_time'],
+        "media": media
+    }
+
+def comparar_earlystoppings_cnn(config: CNNConfig, ea_configs: List[EarlyStoppingConfig], repeticiones=5):
+    """Prueba diferentes configuraciones de EarlyStopping para CNNs"""
+    resultados = {}
+    
+    print("Comparación EarlyStoppings para CNN")
+    
+    for ea in ea_configs:
+        config_nombre = f"{ea.monitor}_pat_{ea.paciencia}_delta_{ea.min_delta}"
+        print(f"\nProbando EarlyStopping: {config_nombre}")
+        
+        config_con_nombre = CNNConfig(
+            nombre=f"{config.nombre}_{config_nombre}",
+            bloques_conv=config.bloques_conv,
+            pool_size=config.pool_size,
+            dense_units=config.dense_units,
+            activation=config.activation,
+            epochs=config.epochs,
+            batch_size=config.batch_size,
+            verbose=0,
+            initializer=config.initializer
+        )
+        
+        resultado = ejecutar_cnn(config_con_nombre, ea, repeticiones)
+        resultados[config_nombre] = resultado
+    
+    # Gráfica comparativa
+    comparativa_modelos(
+        resultados,
+        f"{config.nombre}_comparativa_earlystopping.png"
+    )
+    
+    return resultados
 
 if __name__ == "__main__":
     
@@ -718,6 +916,21 @@ if __name__ == "__main__":
     #probar_activaciones_inicializaciones(configs[3],early_stopping_configs[9],activaciones_inicializaciones,5)
     #probar_neuronas(configs[4],early_stopping_configs[9],neuronas,5)
     #probar_capas(configs[5],early_stopping_configs[9],capas,5)
-    probar_mlp7_mejoras(configs[6], early_stopping_configs[9], mejoras_mlp7, mejores_capas, activaciones_inicializaciones_mlp7,1)
+    #probar_mlp7_mejoras(configs[6], early_stopping_configs[9], mejoras_mlp7, mejores_capas, activaciones_inicializaciones_mlp7,1)
+    cnn_configs = [
+
+        CNNConfig(
+            nombre="cnn1",
+            bloques_conv=[(16, 3), (32, 3)],  # (num_filtros, kernel_size)
+            pool_size=(2, 2),
+            dense_units=100,
+            activation="relu",
+            epochs=200,
+            batch_size=32,
+            verbose=1,
+            initializer="he_normal"
+        )
+    ]
+    comparar_earlystoppings_cnn(cnn_configs[0],early_stopping_configs,5)
     
     
