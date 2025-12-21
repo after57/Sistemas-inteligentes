@@ -288,7 +288,7 @@ def entrenar_MLP(config: MLPConfig, ea: EarlyStoppingConfig,
 
     tf.keras.backend.clear_session() #esto es para limpiar el historial
 
-    if mejoras.usar_augmented_data:
+    if mejoras and mejoras.usar_augmented_data:
 
         #usar pipeline dinámico
         train_ds, test_ds, y_test_labels = cargar_datos_augmented(config.batch_size)
@@ -825,13 +825,13 @@ if __name__ == "__main__":
         EarlyStoppingConfig(monitor='val_loss', paciencia=5, min_delta=0.001, verbose=0), 
         EarlyStoppingConfig(monitor='val_loss', paciencia=7, min_delta=0.0005, verbose=0),
         EarlyStoppingConfig(monitor='val_loss', paciencia=10, min_delta=0.0001, verbose=0),
-        EarlyStoppingConfig(monitor='val_loss', paciencia=15, min_delta=0.00009, verbose=0),
+        EarlyStoppingConfig(monitor='val_loss', paciencia=15, min_delta=0.00009, verbose=0), #mejor para cnn
         EarlyStoppingConfig(monitor='val_accuracy', paciencia=2, min_delta=0.005, verbose=0),
         EarlyStoppingConfig(monitor='val_accuracy', paciencia=3, min_delta=0.002, verbose=0),
         EarlyStoppingConfig(monitor='val_accuracy', paciencia=5, min_delta=0.001, verbose=0), 
-        EarlyStoppingConfig(monitor='val_accuracy', paciencia=7, min_delta=0.0005, verbose=0),#para mi este es el mejor
+        EarlyStoppingConfig(monitor='val_accuracy', paciencia=7, min_delta=0.0005, verbose=0),#para mi este es el mejor para mlp
         EarlyStoppingConfig(monitor='val_accuracy', paciencia=10, min_delta=0.0001, verbose=0),
-        EarlyStoppingConfig(monitor='val_accuracy', paciencia=15, min_delta=0.00009, verbose=0)
+        EarlyStoppingConfig(monitor='val_accuracy', paciencia=15, min_delta=0.00009, verbose=0) 
     ]
 
     activaciones_inicializaciones = [
@@ -842,7 +842,8 @@ if __name__ == "__main__":
         ("leaky_relu", "he_normal"),  # para LeakyReLU habría que añadir la capa manualmente
         ("leaky_relu","he_uniform")
     ]
-    neuronas = [12,24,48,60,80,96,100,120,150,170,200] #entre 60-80 neuronas lo mejor
+    #12,24,48,60,80,96,100,120,150,170,
+    neuronas = [200,300,400,500,600,700,800,900,1000] #entre 60-80 neuronas lo mejor
 
     capas = [
         #uniformes
@@ -872,8 +873,47 @@ if __name__ == "__main__":
         [30, 20, 15, 15],
     ]
 
+    capas_v2 = [
+        
+        # DECRECIENTES 2 capas (balance básico)
+        [700, 300],
+        [600, 400],
+        [500, 300],
+        [400, 200],
+        [350, 150],
+        
+        # DECRECIENTES 3 capas (balance tiempo-rendimiento)
+        [600, 300, 100],
+        [500, 300, 200],
+        [500, 250, 150],
+        [400, 300, 200],
+        [400, 250, 150],
+        [350, 200, 100],
+        
+        # DECRECIENTES 4 capas (más complejas, mejor rendimiento esperado)
+        [500, 300, 150, 50],
+        [400, 300, 200, 100],
+        [400, 250, 200, 150],
+        [350, 300, 250, 100],
+        [350, 250, 150, 100],
+        [300, 200, 150, 100],
+        
+        # DECRECIENTES 5 capas (profundidad óptima)
+        [400, 300, 200, 100, 50],
+        [350, 250, 200, 150, 50],
+        [300, 250, 200, 150, 100],
+        [300, 200, 150, 100, 50],
+        [300, 200, 100, 50, 50],     # Tu mejor anterior
+        
+        # DECRECIENTES 6 capas (máxima profundidad)
+        [300, 250, 200, 150, 100, 50],
+        [250, 200, 175, 150, 125, 100],
+        [300, 200, 150, 100, 75, 50],
+        [200, 180, 160, 140, 120, 100],
+    ]
+
     activaciones_inicializaciones_mlp7 = [ #las que voy a probar en el mlp7
-        #("leaky_relu", "he_normal"), #la mejor hasta ahora
+        ("leaky_relu", "he_normal"), #la mejor hasta ahora
         ("relu", "he_normal"), #dio mal resultado pero por volver a probar
         #sigmoid no la pruebo porque todos los artículos no la recomiendan para mlps sino para las recurrentes
     ]
@@ -914,9 +954,10 @@ if __name__ == "__main__":
     #comparar_earlystoppings(configs[1],early_stopping_configs,5)
     #probar_batch_size(configs[2],early_stopping_configs[9],batch_sizes)
     #probar_activaciones_inicializaciones(configs[3],early_stopping_configs[9],activaciones_inicializaciones,5)
-    #probar_neuronas(configs[4],early_stopping_configs[9],neuronas,5)
-    #probar_capas(configs[5],early_stopping_configs[9],capas,5)
+    probar_neuronas(configs[4],early_stopping_configs[9],neuronas,5)
+    #probar_capas(configs[5],early_stopping_configs[9],capas_v2,5)
     #probar_mlp7_mejoras(configs[6], early_stopping_configs[9], mejoras_mlp7, mejores_capas, activaciones_inicializaciones_mlp7,1)
+    
     cnn_configs = [
 
         CNNConfig(
@@ -929,8 +970,6 @@ if __name__ == "__main__":
             batch_size=32,
             verbose=1,
             initializer="he_normal"
-        )
+        ),
     ]
-    comparar_earlystoppings_cnn(cnn_configs[0],early_stopping_configs,5)
-    
-    
+    #comparar_earlystoppings_cnn(cnn_configs[0],early_stopping_configs,5)
