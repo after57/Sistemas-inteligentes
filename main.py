@@ -919,31 +919,33 @@ if __name__ == "__main__":
     ]
 
     mejores_capas = [
-        [300,200,100,50,50],
-        #[80],
-        #[500],
-        #[60, 20],
-        #[50, 30],
-        #[40,40],
-        #[100], #añadidas nuevas con 100 neuronas por probar, aunque mis mejores resultados han sido los de arriba
-        #[60,40],
-        #[40,30,20,10],
-        #[30,30,10,10,10,10]
+        #[700, 300], [600, 400], [500, 300], [400, 200],
+        #[600, 300, 100], [500, 300, 200], [500, 250, 150], 
+        #[400, 300, 200], [400, 250, 150],
+        #[500, 300, 150, 50], [400, 300, 200, 100], 
+        #[400, 250, 200, 150], [350, 300, 250, 100], 
+        #[300, 200, 150, 100],
+        #[400, 300, 200, 100, 50], [350, 250, 200, 150, 50],
+        #[300, 250, 200, 150, 100], [300, 200, 150, 100, 50],
+        #[300, 200, 100, 50, 50],
+        #[300, 250, 200, 150, 100, 50], [250, 200, 175, 150, 125, 100],
+        #[300, 200, 150, 100, 75, 50],
+        [500,300]
     ]
 
     mejoras_mlp7 = [
         #sin aumento de data
-        #MejorasConfig(dropout=0.0, use_batchnorm=False, usar_augmented_data=False, descripcion="Baseline"),
-        #MejorasConfig(dropout=0.1, use_batchnorm=False, usar_augmented_data=False, descripcion="Dropout_0.1_noAug"),
-        #MejorasConfig(dropout=0.2, use_batchnorm=False, usar_augmented_data=False, descripcion="Dropout_0.2_noAug"),
-        #MejorasConfig(dropout=0.0, use_batchnorm=True, usar_augmented_data=False, descripcion="BatchNorm_noAug"),
-        #MejorasConfig(dropout=0.1, use_batchnorm=True, usar_augmented_data=False, descripcion="Dropout_0.1+BatchNorm_noAug"),
+        MejorasConfig(dropout=0.0, use_batchnorm=False, usar_augmented_data=False, descripcion="Baseline"),
+        MejorasConfig(dropout=0.1, use_batchnorm=False, usar_augmented_data=False, descripcion="Dropout_0.1_noAug"),
+        MejorasConfig(dropout=0.2, use_batchnorm=False, usar_augmented_data=False, descripcion="Dropout_0.2_noAug"),
+        MejorasConfig(dropout=0.0, use_batchnorm=True, usar_augmented_data=False, descripcion="BatchNorm_noAug"),
+        MejorasConfig(dropout=0.1, use_batchnorm=True, usar_augmented_data=False, descripcion="Dropout_0.1+BatchNorm_noAug"),
 
         #con aumento de dat
-        #MejorasConfig(dropout=0.0, use_batchnorm=False, usar_augmented_data=True, descripcion="Baseline_Aug"),
-        #MejorasConfig(dropout=0.1, use_batchnorm=False, usar_augmented_data=True, descripcion="Dropout_0.1_Aug"),
-        #MejorasConfig(dropout=0.2, use_batchnorm=False, usar_augmented_data=True, descripcion="Dropout_0.2_Aug"),
-        #MejorasConfig(dropout=0.0, use_batchnorm=True, usar_augmented_data=True, descripcion="BatchNorm_Aug"),
+        MejorasConfig(dropout=0.0, use_batchnorm=False, usar_augmented_data=True, descripcion="Baseline_Aug"),
+        MejorasConfig(dropout=0.1, use_batchnorm=False, usar_augmented_data=True, descripcion="Dropout_0.1_Aug"),
+        MejorasConfig(dropout=0.2, use_batchnorm=False, usar_augmented_data=True, descripcion="Dropout_0.2_Aug"),
+        MejorasConfig(dropout=0.0, use_batchnorm=True, usar_augmented_data=True, descripcion="BatchNorm_Aug"),
         MejorasConfig(dropout=0.05, use_batchnorm=True, usar_augmented_data=True, descripcion="Dropout_0.05+BatchNorm_Aug"),
     ]
     #el augmentation on the fly añade mucho tiempo, realentiza todo mirar de probar otra vez cacheandolo
@@ -954,9 +956,9 @@ if __name__ == "__main__":
     #comparar_earlystoppings(configs[1],early_stopping_configs,5)
     #probar_batch_size(configs[2],early_stopping_configs[9],batch_sizes)
     #probar_activaciones_inicializaciones(configs[3],early_stopping_configs[9],activaciones_inicializaciones,5)
-    probar_neuronas(configs[4],early_stopping_configs[9],neuronas,5)
+    #probar_neuronas(configs[4],early_stopping_configs[9],neuronas,5)
     #probar_capas(configs[5],early_stopping_configs[9],capas_v2,5)
-    #probar_mlp7_mejoras(configs[6], early_stopping_configs[9], mejoras_mlp7, mejores_capas, activaciones_inicializaciones_mlp7,1)
+    probar_mlp7_mejoras(configs[6], early_stopping_configs[9], mejoras_mlp7, mejores_capas, activaciones_inicializaciones_mlp7,5)
     
     cnn_configs = [
 
