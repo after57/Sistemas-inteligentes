@@ -13,3 +13,5 @@ https://medium.datadriveninvestor.com/deep-learning-best-practices-activation-fu
 https://blog.paperspace.com/the-absolute-guide-to-keras/
 https://medium.com/data-science/data-augmentation-and-handling-huge-datasets-with-keras-a-simple-way-240481069376
 https://www.analyticsvidhya.com/blog/2020/08/image-augmentation-on-the-fly-using-keras-imagedatagenerator/
+https://medium.com/@tylernisonoff/weight-initialization-for-cnns-a-deep-dive-into-he-initialization-50b03f37f53d
+https://medium.com/@bdhuma/which-pooling-method-is-better-maxpooling-vs-minpooling-vs-average-pooling-95fb03f45a9

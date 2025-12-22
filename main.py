@@ -37,14 +37,15 @@ class MejorasConfig:
 @dataclass
 class CNNConfig:
     nombre: str
-    bloques_conv: List[tuple]  # Lista de tuplas (num_filtros, kernel_size)
+    bloques_conv: List[tuple]
     pool_size: tuple = (2, 2)
-    dense_units: int = 100
+    dense_units: int | List[int] = 100  # ← Ahora puede ser int o List[int]
     activation: str = "relu"
     epochs: int = 100
     batch_size: int = 32
     verbose: int = 0
     initializer: str = "he_normal"
+    capas_por_bloque: int = 1
 
 _datos_cacheados = None
 
@@ -572,34 +573,91 @@ def cargar_datos_cnn():
 
     return X_train,y_train_cat,X_test,y_test_cat,y_test
 
-def compilar_cnn(config: CNNConfig, input_shape: tuple = (32, 32, 3), num_clases: int = 10): #input shape en cifar 10 es 32x32x3
+def cargar_datos_cnn_augmented(batch_size=32):
+    """Carga datos para CNN con data augmentation on-the-fly"""
+    (X_train, y_train), (X_test, y_test) = keras.datasets.cifar10.load_data()
+    X_train = X_train.astype("float32") / 255.0
+    X_test = X_test.astype("float32") / 255.0
+    y_train_cat = to_categorical(y_train, 10)
+    y_test_cat = to_categorical(y_test, 10)
+
+    # Dataset de entrenamiento con augmentation
+    train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train_cat))
+    train_ds = train_ds.shuffle(5000)
+    
+    train_ds = train_ds.map(
+        lambda x, y: (data_augmentation(x, training=True), y),
+        num_parallel_calls=tf.data.AUTOTUNE
+    )
+    train_ds = train_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+
+    test_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test_cat))
+    test_ds = test_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    
+    return train_ds, test_ds, y_test
+
+
+def compilar_cnn(config: CNNConfig, input_shape: tuple = (32, 32, 3), 
+                 num_clases: int = 10, mejoras: MejorasConfig = None):
     """Compila una CNN según la configuración especificada"""
+    
+    if mejoras is None:
+        mejoras = MejorasConfig()
     
     model = models.Sequential(name=config.nombre)
     model.add(layers.Input(shape=input_shape))
     
-    # Bloques convolucionales
+    # Bloques convolucionales (igual que antes)
     for num_filtros, kernel_size in config.bloques_conv:
-        #capa convolucion
-        model.add(layers.Conv2D(
-            num_filtros,
-            kernel_size=kernel_size,
-            activation=config.activation,
-            kernel_initializer=config.initializer,
-            padding='same'
-        ))
+        for i in range(config.capas_por_bloque):
+            model.add(layers.Conv2D(
+                num_filtros,
+                kernel_size=kernel_size,
+                kernel_initializer=config.initializer,
+                padding='same'
+            ))
+            
+            if mejoras.use_batchnorm:
+                model.add(layers.BatchNormalization())
+            
+            if config.activation == "leaky_relu":
+                model.add(layers.LeakyReLU(negative_slope=0.1))
+            else:
+                model.add(layers.Activation(config.activation))
+            
+            if mejoras.dropout > 0 and i < config.capas_por_bloque - 1:
+                model.add(layers.Dropout(mejoras.dropout))
         
-        # MaxPooling
         model.add(layers.MaxPooling2D(pool_size=config.pool_size))
     
-    # Aplanar para capas densas
+    # Flatten
     model.add(layers.Flatten())
     
-    #capa densa oculta
-    model.add(layers.Dense(config.dense_units, activation=config.activation,
-                          kernel_initializer=config.initializer))
+    # Capas Dense (NUEVA LÓGICA)
+    # Si dense_units es int → 1 capa
+    # Si dense_units es List → múltiples capas
+    if isinstance(config.dense_units, int):
+        dense_list = [config.dense_units]
+    else:
+        dense_list = config.dense_units
     
-    #capa de salida
+    for i, neuronas in enumerate(dense_list):
+        model.add(layers.Dense(neuronas, 
+                              kernel_initializer=config.initializer))
+        
+        if mejoras.use_batchnorm:
+            model.add(layers.BatchNormalization())
+        
+        if config.activation == "leaky_relu":
+            model.add(layers.LeakyReLU(negative_slope=0.1))
+        else:
+            model.add(layers.Activation(config.activation))
+        
+        # Dropout en capas intermedias (no en la última)
+        if mejoras.dropout > 0 and i < len(dense_list) - 1:
+            model.add(layers.Dropout(mejoras.dropout))
+    
+    # Capa de salida
     model.add(layers.Dense(num_clases, activation="softmax"))
     
     model.compile(
@@ -610,8 +668,12 @@ def compilar_cnn(config: CNNConfig, input_shape: tuple = (32, 32, 3), num_clases
     
     return model
 
-def entrenar_CNN(config: CNNConfig, ea: EarlyStoppingConfig, usar_ea: bool = True):
+def entrenar_CNN(config: CNNConfig, ea: EarlyStoppingConfig, 
+                 usar_ea: bool = True, mejoras: MejorasConfig = None):
     """Entrena una CNN y devuelve métricas"""
+    
+    if mejoras is None:
+        mejoras = MejorasConfig()
     
     my_callbacks = []
     if usar_ea:
@@ -627,37 +689,66 @@ def entrenar_CNN(config: CNNConfig, ea: EarlyStoppingConfig, usar_ea: bool = Tru
     
     tf.keras.backend.clear_session()
     
-    # Cargar datos sin aplanar
-    X_train, y_train, X_test, y_test, y_test_labels = cargar_datos_cnn()
+    # Decidir qué datos cargar según si usa augmentation
+    if mejoras.usar_augmented_data:
+        # Pipeline dinámico con augmentation
+        train_ds, test_ds, y_test_labels = cargar_datos_cnn_augmented(config.batch_size)
+        model = compilar_cnn(config, mejoras=mejoras)
+        
+        t0 = time.time()
+        history = model.fit(
+            train_ds,
+            validation_data=test_ds,
+            epochs=config.epochs,
+            verbose=config.verbose,
+            callbacks=my_callbacks
+        )
+        train_time = time.time() - t0
+        
+        test_loss, test_acc = model.evaluate(test_ds, verbose=config.verbose)
+        y_pred_probs = model.predict(test_ds, verbose=0)
+        y_pred = np.argmax(y_pred_probs, axis=1)
+        
+        return {
+            "train_time": train_time,
+            "test_loss": test_loss,
+            "test_acc": test_acc,
+            "history": history.history,
+            "y_pred": y_pred,
+            "y_test": y_test_labels.flatten()
+        }
     
-    model = compilar_cnn(config)
-    
-    t0 = time.time()
-    history = model.fit(
-        X_train, y_train,
-        validation_split=0.1,
-        batch_size=config.batch_size,
-        epochs=config.epochs,
-        verbose=config.verbose,
-        callbacks=my_callbacks
-    )
-    train_time = time.time() - t0
-    
-    test_loss, test_acc = model.evaluate(X_test, y_test, verbose=config.verbose)
-    y_pred_probs = model.predict(X_test, verbose=0)
-    y_pred = np.argmax(y_pred_probs, axis=1)
-    
-    return {
-        "train_time": train_time,
-        "test_loss": test_loss,
-        "test_acc": test_acc,
-        "history": history.history,
-        "y_pred": y_pred,
-        "y_test": y_test_labels.flatten()
-    }
+    else:
+        # Datos normales sin augmentation
+        X_train, y_train, X_test, y_test, y_test_labels = cargar_datos_cnn()
+        model = compilar_cnn(config, mejoras=mejoras)
+        
+        t0 = time.time()
+        history = model.fit(
+            X_train, y_train,
+            validation_split=0.1,
+            batch_size=config.batch_size,
+            epochs=config.epochs,
+            verbose=config.verbose,
+            callbacks=my_callbacks
+        )
+        train_time = time.time() - t0
+        
+        test_loss, test_acc = model.evaluate(X_test, y_test, verbose=config.verbose)
+        y_pred_probs = model.predict(X_test, verbose=0)
+        y_pred = np.argmax(y_pred_probs, axis=1)
+        
+        return {
+            "train_time": train_time,
+            "test_loss": test_loss,
+            "test_acc": test_acc,
+            "history": history.history,
+            "y_pred": y_pred,
+            "y_test": y_test_labels.flatten()
+        }
 
 def ejecutar_cnn(config: CNNConfig, ea: EarlyStoppingConfig, repeticiones: int = 5, 
-                 usar_ea: bool = True):
+                 usar_ea: bool = True,mejoras: MejorasConfig = None):
     """Ejecuta múltiples entrenamientos de una CNN y calcula promedios"""
     
     mejor_entrenamiento = None
@@ -702,7 +793,7 @@ def ejecutar_cnn(config: CNNConfig, ea: EarlyStoppingConfig, repeticiones: int =
         f"{config.nombre}_matriz_confusion.png"
     )
     
-    # Resultados finales
+    #resultados finales
     print(f"\nResultados finales de {config.nombre}")
     print(f"Tiempo de entrenamiento (media): {media['train_time']:.2f}s")
     print(f"Test Accuracy (media): {media['test_acc']:.4f}")
@@ -782,6 +873,192 @@ def comparar_kernel_size_cnn(config: CNNConfig, ea: EarlyStoppingConfig,
     comparativa_modelos(
         resultados,
         f"{config.nombre}_comparativa_kernel_sizes.png"
+    )
+    
+    return resultados
+
+def comparar_batch_sizes_cnn(config: CNNConfig, ea: EarlyStoppingConfig, 
+                             batchs: List[int], repeticiones: int = 5):
+    
+    resultados = {}
+    
+    print("Comparación de Kernel Sizes para CNN")
+    
+    for batch in batchs:
+        config_nombre = f"bathSize_{batch}"
+        print(f"\nProbando batch size: {batch}")
+        
+        
+        config_con_kernel = CNNConfig(
+            nombre=f"{config.nombre}_{config_nombre}",
+            bloques_conv=config.bloques_conv,
+            pool_size=config.pool_size,
+            dense_units=config.dense_units,
+            activation=config.activation,
+            epochs=config.epochs,
+            batch_size=batch,
+            verbose=0,
+            initializer=config.initializer
+        )
+        
+        resultado = ejecutar_cnn(config_con_kernel, ea, repeticiones)
+        resultados[config_nombre] = resultado
+    
+    # Gráfica comparativa
+    comparativa_modelos(
+        resultados,
+        f"{config.nombre}_comparativa_batch_sizes.png"
+    )
+    
+    return resultados
+
+def comparar_funciones_cnn(config: CNNConfig, ea: EarlyStoppingConfig,
+                           funciones: List[tuple],repeticiones: int = 5):
+    resultados = {}
+    for act,init in funciones:
+        config_nombre = f"{act}_{init}"
+        config_nombre = config.nombre + config_nombre
+        modelo_probar = CNNConfig(
+            config_nombre,
+            config.bloques_conv,
+            config.pool_size,
+            config.dense_units,
+            act,
+            config.epochs,
+            config.batch_size,
+            0,
+            init,
+            config.capas_por_bloque
+        )
+        resultado = ejecutar_cnn(modelo_probar,ea,repeticiones)
+        resultados[config_nombre] = resultado
+    
+    comparativa_modelos(resultados,'comparacion_act_init_cnn.png')
+    return resultados
+
+def comparar_capas(config: CNNConfig, ea: EarlyStoppingConfig,
+                   capas: List[int],repeticiones: int = 5):
+    resultados = {}
+    for n in capas:
+        nombre = f"{n}_capas"
+        nombre_config = f"{config.nombre}_{nombre}"
+        config_con_nombre = CNNConfig(
+            nombre_config,
+            config.bloques_conv,
+            config.pool_size,
+            config.dense_units,
+            config.activation,
+            config.epochs,
+            config.batch_size,
+            0,
+            config.initializer,
+            n
+        )
+        resultado = ejecutar_cnn(config_con_nombre,ea,repeticiones)
+        resultados[nombre_config] = resultado
+    
+    comparativa_modelos(resultados,f"comparativa_capas_por_bloque.png")
+    return resultados
+
+def comparar_bloques(config: CNNConfig, ea: EarlyStoppingConfig,
+                   bloques: List[int],repeticiones: int = 5):
+    resultados = {}
+    for n in bloques:
+        num_bloques = len(n)
+        nombre_config = f"{config.nombre}_{num_bloques}_bloques"
+
+        config_con_nombre = CNNConfig(
+            nombre_config,
+            n,
+            config.pool_size,
+            config.dense_units,
+            config.activation,
+            config.epochs,
+            config.batch_size,
+            0,
+            config.initializer,
+            config.capas_por_bloque
+        )
+        resultado = ejecutar_cnn(config_con_nombre,ea,repeticiones)
+        resultados[nombre_config] = resultado
+    
+    comparativa_modelos(resultados,f"comparativa_bloques.png")
+    return resultados
+
+def comparar_arquitecturas_dense(config: CNNConfig, ea: EarlyStoppingConfig,
+                                dense_arquitecturas: List[List[int] | int],
+                                repeticiones: int = 5):
+    """Prueba diferentes arquitecturas de capas Dense finales"""
+    resultados = {}
+    
+    print("Comparando arquitecturas de capas Dense")
+    
+    for dense_arch in dense_arquitecturas:
+        # Crear nombre descriptivo
+        if isinstance(dense_arch, int):
+            nombre_arch = f"dense_{dense_arch}"
+        else:
+            nombre_arch = "dense_" + "_".join([str(n) for n in dense_arch])
+        
+        print(f"\nProbando arquitectura Dense: {dense_arch}")
+        
+        config_con_dense = CNNConfig(
+            nombre=f"{config.nombre}_{nombre_arch}",
+            bloques_conv=config.bloques_conv,
+            capas_por_bloque=config.capas_por_bloque,
+            pool_size=config.pool_size,
+            dense_units=dense_arch,  # ← Puede ser int o List[int]
+            activation=config.activation,
+            epochs=config.epochs,
+            batch_size=config.batch_size,
+            verbose=0,
+            initializer=config.initializer
+        )
+        
+        resultado = ejecutar_cnn(config_con_dense, ea, repeticiones)
+        resultados[nombre_arch] = resultado
+    
+    comparativa_modelos(
+        resultados,
+        f"{config.nombre}_comparativa_arquitecturas_dense.png"
+    )
+    
+    return resultados
+
+def probar_cnn_mejoras(
+    config_base: CNNConfig, 
+    ea: EarlyStoppingConfig, 
+    mejoras_configs: List[MejorasConfig],
+    repeticiones: int = 5
+):
+    """Prueba diferentes configuraciones de mejoras en CNN"""
+    resultados = {}
+    
+    print("Comparando mejoras para CNN")
+    
+    for mejora in mejoras_configs:
+        mejora_nombre = mejora.descripcion.replace(' ', '_').replace('+', '')
+        config_nombre = f"{config_base.nombre}_{mejora_nombre}"
+        config_con_nombre = CNNConfig(
+            config_nombre,
+            config_base.bloques_conv,
+            config_base.pool_size,
+            config_base.dense_units,
+            config_base.activation,
+            config_base.epochs,
+            config_base.epochs,
+            0,
+            config_base.initializer,
+            config_base.capas_por_bloque
+        )
+        print(f"\nProbando: {mejora.descripcion}")
+        resultado = ejecutar_cnn(config_con_nombre, ea, repeticiones, 
+                                usar_ea=True, mejoras=mejora)
+        resultados[config_nombre] = resultado
+    
+    comparativa_modelos(
+        resultados,
+        f"comparativa_mejoras.png"
     )
     
     return resultados
@@ -947,7 +1224,7 @@ if __name__ == "__main__":
 
     activaciones_inicializaciones_mlp7 = [ #las que voy a probar en el mlp7
         ("leaky_relu", "he_normal"), #la mejor hasta ahora
-        #("relu", "he_normal"), #dio mal resultado pero por volver a probar
+        ("relu", "he_normal"), #dio mal resultado pero por volver a probar
         #sigmoid no la pruebo porque todos los artículos no la recomiendan para mlps sino para las recurrentes
     ]
 
@@ -956,7 +1233,7 @@ if __name__ == "__main__":
         [600, 300, 100], [500, 300, 200], [500, 250, 150], 
         [400, 300, 200], [400, 250, 150],
         [500, 300, 150, 50], [400, 300, 200, 100], 
-        [400, 250, 200, 150], [350, 300, 250, 100], 
+        [400, 250, 200, 150], [350, 300, 250, 100],
         [300, 200, 150, 100],
         [400, 300, 200, 100, 50], [350, 250, 200, 150, 50],
         [300, 250, 200, 150, 100], [300, 200, 150, 100, 50],
@@ -1006,8 +1283,111 @@ if __name__ == "__main__":
             verbose=1,
             initializer="he_normal"
         ),
+        CNNConfig(
+            nombre="cnn2",
+            bloques_conv=[(16, 3), (32, 3)],  # (num_filtros, kernel_size)
+            pool_size=(2, 2),
+            dense_units=100,
+            activation="relu",
+            epochs=200,
+            batch_size=32,
+            verbose=1,
+            initializer="he_normal"
+        ),
+        CNNConfig(
+            nombre="cnn2_pruebas",
+            bloques_conv=[(16, 3), (32, 3)],  # (num_filtros, kernel_size)
+            pool_size=(2, 2),
+            dense_units=100,
+            activation="relu",
+            epochs=200,
+            batch_size=200,#el que mejor me ha salido
+            verbose=1,
+            initializer="he_normal"
+        ),
+        CNNConfig(
+            nombre="cnn3_pruebas",
+            bloques_conv=[(32, 3), (128, 3)],  # num_filtros, kernel_size)
+            pool_size=(2, 2),
+            dense_units=100,
+            activation="relu",
+            epochs=200,
+            batch_size=200,#el que mejor me ha salido
+            verbose=1,
+            initializer="he_uniform",
+        ),
+        CNNConfig(
+            nombre="cnn3_pruebas_bloques",
+            bloques_conv=[(32, 3), (128, 3)],  # num_filtros, kernel_size)
+            pool_size=(2, 2),
+            dense_units=100,
+            activation="relu",
+            epochs=200,
+            batch_size=200,#el que mejor me ha salido
+            verbose=1,
+            initializer="he_uniform",
+            capas_por_bloque=2
+        ),
+        CNNConfig(
+            nombre="cnn3_pruebas_bloques",
+            bloques_conv=[(32, 3), (64, 3), (128, 3)],  # num_filtros, kernel_size)
+            pool_size=(2, 2),
+            dense_units=100,
+            activation="relu",
+            epochs=200,
+            batch_size=200,#el que mejor me ha salido
+            verbose=1,
+            initializer="he_uniform",
+            capas_por_bloque=2
+        ),
+        CNNConfig(
+            nombre="cnn3_pruebas_mejoras",
+            bloques_conv=[(32, 3), (64, 3), (128, 3)],  # num_filtros, kernel_size)
+            pool_size=(2, 2),
+            dense_units=100,
+            activation="relu",
+            epochs=200,
+            batch_size=200,#el que mejor me ha salido
+            verbose=1,
+            initializer="he_uniform",
+            capas_por_bloque=2
+        ),
     ]
      
     #comparar_earlystoppings_cnn(cnn_configs[0],early_stopping_configs,5)
     kernel_sizes_a_probar = [3, 5, 7, 9]
-    comparar_kernel_size_cnn(cnn_configs[0],early_stopping_configs[5],kernel_sizes_a_probar,5)
+    batch_sizes_cnn = [16,32,64,128,200,256,300]
+    capas = [1,2,3,4]
+    bloques= [
+        [(32, 3)],
+        [(32, 3), (64, 3)],         
+        [(32, 3), (64, 3), (128, 3)],
+        [(16, 3), (32, 3), (64, 3), (128, 3)], 
+    ]
+
+    dense_arquitecturas_completas = [
+        100,          
+        256,          
+        512,          
+        [512, 256],   
+        [256, 128],   
+        [256, 256],   
+        [512, 256, 128],
+        [256, 128, 64],
+    ]
+
+    #comparar_kernel_size_cnn(cnn_configs[0],early_stopping_configs[5],kernel_sizes_a_probar,5)
+    #comparar_batch_sizes_cnn(cnn_configs[1],early_stopping_configs[5],batch_sizes_cnn,5)
+    #comparar_funciones_cnn(cnn_configs[2],early_stopping_configs[5],activaciones_inicializaciones,5)
+    #comparar_capas(cnn_configs[3],early_stopping_configs[5],capas,5)
+    #comparar_bloques(cnn_configs[4],early_stopping_configs[5],bloques,5)
+    #comparar_arquitecturas_dense(
+    #    cnn_configs[5],
+    #    early_stopping_configs[5],
+    #    dense_arquitecturas_completas,
+    #      repeticiones=5
+    #)
+    #probar_cnn_mejoras(cnn_configs[6], early_stopping_configs[5], mejoras_mlp7, 5)
+    
+
+    
