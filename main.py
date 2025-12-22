@@ -19,7 +19,7 @@ class MLPConfig:
     verbose: int = 0
     initializer: str = "glorot_uniform" #es el que viene por defecto sino lo especificas
 
-@dataclass #dataclass para los distintos earlyStops
+@dataclass #dataclass para los distintos earlyStoppings
 class EarlyStoppingConfig:
     monitor: str = 'val_loss'
     paciencia: int = 10
@@ -48,7 +48,7 @@ class CNNConfig:
 
 _datos_cacheados = None
 
-data_augmentation = keras.Sequential([ #nueva forma de usar el imageDataGenerator, secuencial que aplica los filtros
+data_augmentation = keras.Sequential([ #para hacer el agumentation on the fly, uso estos filtros, el valor que se aplica
     layers.RandomFlip("horizontal"),
     layers.RandomRotation(0.05), #puede rotar entre 0 y 0.05
     layers.RandomZoom(0.05),
@@ -79,17 +79,17 @@ def cargar_datos_augmented(batch_size=32):
 def cargar_datos():
     global _datos_cacheados
 
-    if _datos_cacheados is not None:
+    if _datos_cacheados is not None: #para evitar mas tiempo
         return _datos_cacheados
 
-    # Cargar y normalizar
+    #cargar y normalizar
     (X_train, y_train), (X_test, y_test) = keras.datasets.cifar10.load_data()
     X_train = X_train.astype("float32") / 255.0
     X_test  = X_test.astype("float32") / 255.0
     y_train_cat = to_categorical(y_train, 10)
     y_test_cat  = to_categorical(y_test, 10)
 
-    # Aplanar directamente (para MLP)
+    #aplanar
     X_train_flat = X_train.reshape((X_train.shape[0], -1))
     X_test_flat  = X_test.reshape((X_test.shape[0], -1))
 
@@ -171,7 +171,7 @@ def comparativa_modelos(resultados, filename):
     
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=10)  #las lineas son los colores
+    
     
     plt.tight_layout() #ajustar margenes
     plt.savefig(filename, dpi=150, bbox_inches='tight')
@@ -183,9 +183,9 @@ def plottear_graficas(x, y_list, labels, title, filename):
 
     plt.figure(figsize=(10, 6))  # definimos fig_size
     
-    #primer eje (izquierda
+    #primer eje, para los accuracys el 0 es el train el 2 es el validation
     ax1 = plt.gca()
-    ax1.plot(x, y_list[0], label=labels[0], marker='o', color='b')
+    ax1.plot(x, y_list[0], label=labels[0], marker='o', color='b') #x son las maximas épocas
     ax1.plot(x, y_list[2], label=labels[2], marker='o', color='g')
     ax1.set_xlabel("Época")
     ax1.set_ylabel("Accuracy", color='k')
@@ -202,7 +202,7 @@ def plottear_graficas(x, y_list, labels, title, filename):
     ax2.set_ylabel("Loss", color='k')
     ax2.tick_params(axis='y', labelcolor='k')
 
-    loss_values = np.concatenate((y_list[1], y_list[3]))
+    loss_values = np.concatenate((y_list[1], y_list[3])) #juntasmos los losses
     loss_min, loss_max = min(loss_values), max(loss_values)
     ax2.set_ylim([loss_min - 0.05 * (loss_max-loss_min), loss_max + 0.05 * (loss_max-loss_min)])
     #dajamos unos margenes
@@ -363,11 +363,11 @@ def ejecutar_mlp(
     for i in range(repeticiones):
         resultado = entrenar_MLP(config,ea,usar_ea,mejora)
         if resultado['test_acc'] > mejor_test_acc:
+            mejor_test_acc = resultado['test_acc']
             mejor_entrenamiento = i
         historial.append(resultado)
 
     media, max_epochs, num_epocas = calcular_media_historial(historial)
-    #mostrar en qué época paró cada entrenamiento (esta en num_epocas)
     print(f"Información de EarlyStopping")
     print(f"Configuración: {config.nombre}")
     for i,ep in enumerate(num_epocas):
@@ -393,7 +393,7 @@ def ejecutar_mlp(
         mejor_resultado["y_test"],
         mejor_resultado["y_pred"],
         config.nombre,
-        f"{config.nombre}_matriz_confusion.png"
+        f"{config.nombre}_matriz_confusion_{mejor_resultado['test_acc']}.png"
     )
 
     print(f"\nResultados finales de {config.nombre}")
@@ -535,8 +535,6 @@ def probar_mlp7_mejoras(
     for capas in capas_a_probar:
         
         nombre_capas = str(capas).replace('[', '').replace(']', '').replace(',', '_').replace(' ', '')
-        resultados_por_capa = {}  #para no imrpimir todo sjuntos
-
         for act, init in activaciones_inicializaciones:
             for mejora in mejoras_configs:
                 mejora_nombre = mejora.descripcion.replace(' ', '_').replace('+', '')
@@ -559,11 +557,10 @@ def probar_mlp7_mejoras(
                 
                 #guardamos en el global y en el de la capa
                 resultados_globales[clave] = resultado
-                resultados_por_capa[clave] = resultado
-        # generar comparativa solo para esta arquitectura
-        comparativa_modelos(resultados_por_capa, f"mlp7_comparativa_{nombre_capas}.png")
-    
+
+    comparativa_modelos(resultados_globales, f"mlp7_comparativa.png")
     return resultados_globales
+
 
 def cargar_datos_cnn():
     """Carga datos para CNN manteniendo estructura espacial (sin aplanar)"""
@@ -583,7 +580,7 @@ def compilar_cnn(config: CNNConfig, input_shape: tuple = (32, 32, 3), num_clases
     
     # Bloques convolucionales
     for num_filtros, kernel_size in config.bloques_conv:
-        # Capa convolucional
+        #capa convolucion
         model.add(layers.Conv2D(
             num_filtros,
             kernel_size=kernel_size,
@@ -598,11 +595,11 @@ def compilar_cnn(config: CNNConfig, input_shape: tuple = (32, 32, 3), num_clases
     # Aplanar para capas densas
     model.add(layers.Flatten())
     
-    # Capa densa oculta
+    #capa densa oculta
     model.add(layers.Dense(config.dense_units, activation=config.activation,
                           kernel_initializer=config.initializer))
     
-    # Capa de salida
+    #capa de salida
     model.add(layers.Dense(num_clases, activation="softmax"))
     
     model.compile(
@@ -753,6 +750,42 @@ def comparar_earlystoppings_cnn(config: CNNConfig, ea_configs: List[EarlyStoppin
     
     return resultados
 
+def comparar_kernel_size_cnn(config: CNNConfig, ea: EarlyStoppingConfig, 
+                             kernels: List[int], repeticiones: int = 5):
+    """Prueba diferentes tamaños de kernel para CNNs (Tarea CNN2)"""
+    resultados = {}
+    
+    print("Comparación de Kernel Sizes para CNN")
+    
+    for kernel_size in kernels:
+        config_nombre = f"kernel_{kernel_size}x{kernel_size}"
+        print(f"\nProbando kernel size: {kernel_size}×{kernel_size}")
+        
+        bloques_nuevos = [(num_filtros, kernel_size) for num_filtros, _ in config.bloques_conv]
+        
+        config_con_kernel = CNNConfig(
+            nombre=f"{config.nombre}_{config_nombre}",
+            bloques_conv=bloques_nuevos,
+            pool_size=config.pool_size,
+            dense_units=config.dense_units,
+            activation=config.activation,
+            epochs=config.epochs,
+            batch_size=config.batch_size,
+            verbose=0,
+            initializer=config.initializer
+        )
+        
+        resultado = ejecutar_cnn(config_con_kernel, ea, repeticiones)
+        resultados[config_nombre] = resultado
+    
+    # Gráfica comparativa
+    comparativa_modelos(
+        resultados,
+        f"{config.nombre}_comparativa_kernel_sizes.png"
+    )
+    
+    return resultados
+
 if __name__ == "__main__":
     
     batch_sizes = [16,32,64,100,128,200,256,300,512,1024,2048] #batch_sizes a probar
@@ -875,14 +908,14 @@ if __name__ == "__main__":
 
     capas_v2 = [
         
-        # DECRECIENTES 2 capas (balance básico)
+        #DECRECIENTES 2 capas (balance básico)
         [700, 300],
         [600, 400],
         [500, 300],
         [400, 200],
         [350, 150],
         
-        # DECRECIENTES 3 capas (balance tiempo-rendimiento)
+        #DECRECIENTES 3 capas (balance tiempo-rendimiento)
         [600, 300, 100],
         [500, 300, 200],
         [500, 250, 150],
@@ -914,22 +947,22 @@ if __name__ == "__main__":
 
     activaciones_inicializaciones_mlp7 = [ #las que voy a probar en el mlp7
         ("leaky_relu", "he_normal"), #la mejor hasta ahora
-        ("relu", "he_normal"), #dio mal resultado pero por volver a probar
+        #("relu", "he_normal"), #dio mal resultado pero por volver a probar
         #sigmoid no la pruebo porque todos los artículos no la recomiendan para mlps sino para las recurrentes
     ]
 
     mejores_capas = [
-        #[700, 300], [600, 400], [500, 300], [400, 200],
-        #[600, 300, 100], [500, 300, 200], [500, 250, 150], 
-        #[400, 300, 200], [400, 250, 150],
-        #[500, 300, 150, 50], [400, 300, 200, 100], 
-        #[400, 250, 200, 150], [350, 300, 250, 100], 
-        #[300, 200, 150, 100],
-        #[400, 300, 200, 100, 50], [350, 250, 200, 150, 50],
-        #[300, 250, 200, 150, 100], [300, 200, 150, 100, 50],
-        #[300, 200, 100, 50, 50],
-        #[300, 250, 200, 150, 100, 50], [250, 200, 175, 150, 125, 100],
-        #[300, 200, 150, 100, 75, 50],
+        [700, 300], [600, 400], [500, 300], [400, 200],
+        [600, 300, 100], [500, 300, 200], [500, 250, 150], 
+        [400, 300, 200], [400, 250, 150],
+        [500, 300, 150, 50], [400, 300, 200, 100], 
+        [400, 250, 200, 150], [350, 300, 250, 100], 
+        [300, 200, 150, 100],
+        [400, 300, 200, 100, 50], [350, 250, 200, 150, 50],
+        [300, 250, 200, 150, 100], [300, 200, 150, 100, 50],
+        [300, 200, 100, 50, 50],
+        [300, 250, 200, 150, 100, 50], [250, 200, 175, 150, 125, 100],
+        [300, 200, 150, 100, 75, 50],
         [500,300]
     ]
 
@@ -958,7 +991,7 @@ if __name__ == "__main__":
     #probar_activaciones_inicializaciones(configs[3],early_stopping_configs[9],activaciones_inicializaciones,5)
     #probar_neuronas(configs[4],early_stopping_configs[9],neuronas,5)
     #probar_capas(configs[5],early_stopping_configs[9],capas_v2,5)
-    probar_mlp7_mejoras(configs[6], early_stopping_configs[9], mejoras_mlp7, mejores_capas, activaciones_inicializaciones_mlp7,5)
+    #probar_mlp7_mejoras(configs[6], early_stopping_configs[9], mejoras_mlp7, mejores_capas, activaciones_inicializaciones_mlp7,5)
     
     cnn_configs = [
 
@@ -974,4 +1007,7 @@ if __name__ == "__main__":
             initializer="he_normal"
         ),
     ]
+     
     #comparar_earlystoppings_cnn(cnn_configs[0],early_stopping_configs,5)
+    kernel_sizes_a_probar = [3, 5, 7, 9]
+    comparar_kernel_size_cnn(cnn_configs[0],early_stopping_configs[5],kernel_sizes_a_probar,5)
